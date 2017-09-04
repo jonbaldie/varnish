@@ -11,3 +11,5 @@ backend default {
     .port = "8080";
 }
 EOF
+
+touch /etc/varnish/secret
