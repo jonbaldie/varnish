@@ -1,6 +1,6 @@
 ### Varnish Docker Repository
 
-[![Build Status](https://travis-ci.org/jonbaldie/varnish-docker.svg?branch=master)](https://travis-ci.org/jonbaldie/varnish-docker)
+[![Build Status](https://travis-ci.org/jonbaldie/varnish.svg?branch=master)](https://travis-ci.org/jonbaldie/varnish)
 
 Steps to use:
 
