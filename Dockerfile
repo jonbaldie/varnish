@@ -7,5 +7,6 @@ ADD start.sh start.sh
 RUN chmod +x start.sh
 
 VOLUME ["/var/lib/varnish", "/etc/varnish"]
+EXPOSE 80
 
 CMD ["./start.sh"]
