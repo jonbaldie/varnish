@@ -1,7 +1,7 @@
 #!/bin/sh
 
-apk update
-apk add varnish
+apt-get -y update
+apt-get -y install varnish
 
 tee /etc/varnish/default.vcl <<EOF
 vcl 4.0;

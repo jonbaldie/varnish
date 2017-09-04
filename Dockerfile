@@ -1,4 +1,4 @@
-FROM alpine
+FROM debian
 MAINTAINER Jonathan Baldie "jon@jonbaldie.com"
 
 ADD install.sh install.sh
