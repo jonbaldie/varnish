@@ -2,7 +2,7 @@
 
 [![Build Status](https://travis-ci.org/jonbaldie/varnish.svg?branch=master)](https://travis-ci.org/jonbaldie/varnish)
 
-Steps to use:
+To use:
 
 `docker pull jonbaldie/varnish`
 
