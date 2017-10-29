@@ -29,6 +29,7 @@ For this Docker image, you can `ADD` your `default.vcl` file into `/etc/varnish/
 Unfortunately Varnish doesn't understand HTTPS requests, so you have to do some creative rerouting of requests to make it work. This is how I do it in my setup:
 
 HTTPS request ==> Nginx container port 443 ==> Varnish container port 80 ==> Nginx port 80 (internal) ==> Website.
+
 HTTP request ==> Varnish container port 80 ==> Nginx port 80 (internal) ==> Website.
 
 This may look ugly, but fortunately with Docker networking this is surprisingly easy to set up, and very performant.
