@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  varnish:
+    image: jonbaldie/varnish
+    ports:
+      - "80:80"
+    volumes:
+      - ./default.vcl:/etc/varnish/default.vcl:ro
+    depends_on:
+      - web
+    restart: unless-stopped
+
+  web:
+    image: nginx:alpine
+    restart: unless-stopped
