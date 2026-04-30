@@ -4,3 +4,6 @@
 *.db
 .beads-credential-key
 .worktrees/
+
+# Serena auto-generated memories
+.serena/memories/
