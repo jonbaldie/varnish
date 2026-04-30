@@ -11,4 +11,6 @@ ENV VARNISH_START /usr/sbin/varnishd -j unix,user=varnish -F -f /etc/varnish/def
 ADD start.sh /start.sh
 RUN chmod +x /start.sh
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD pgrep varnishd || exit 1
+
 CMD ["/start.sh"]
