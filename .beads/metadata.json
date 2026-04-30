@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "varnish",
+  "project_id": "9426d834-bc61-45bd-a96e-e11584109685"
+}
