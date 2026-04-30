@@ -1,6 +1,6 @@
 ### Varnish Docker Repository
 
-[![Build Status](https://travis-ci.org/jonbaldie/varnish.svg?branch=master)](https://travis-ci.org/jonbaldie/varnish)
+[![Docker CI](https://github.com/jonbaldie/varnish/actions/workflows/docker.yml/badge.svg)](https://github.com/jonbaldie/varnish/actions/workflows/docker.yml)
 
 To use:
 
@@ -34,7 +34,7 @@ This repository includes a `docker-compose.yml` file and a sample `default.vcl` 
 To try it out, run:
 
 ```bash
-docker-compose up
+docker compose up
 ```
 
 The sample `default.vcl` points Varnish to the `web` backend and adds basic caching rules for static assets.
