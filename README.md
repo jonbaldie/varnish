@@ -8,6 +8,12 @@ To use:
 
 Alternatively you can `git clone` the repo and run `make` from the project root.
 
+### Version Matrix
+
+| Debian Version | Varnish Version |
+|----------------|-----------------|
+| bookworm       | 7.1.1           |
+
 ### What is Varnish?
 
 It's basically Redis for HTTP requests.
