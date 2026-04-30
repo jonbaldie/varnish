@@ -24,6 +24,21 @@ Expose Varnish on port 80, and point it to your web server using a `vcl` config 
 
 For this Docker image, you can `ADD` your `default.vcl` file into `/etc/varnish/` inside the container. For my own setup I use Docker Compose with mounted volumes, which means any edits I make don't mean I have to rebuild the container.
 
+### Docker Compose example
+
+This repository includes a `docker-compose.yml` file and a sample `default.vcl` that demonstrates a typical setup:
+
+- `varnish` service running this image on port 80, with the VCL file mounted from the host.
+- `web` backend service running the official `nginx:alpine` image.
+
+To try it out, run:
+
+```bash
+docker-compose up
+```
+
+The sample `default.vcl` points Varnish to the `web` backend and adds basic caching rules for static assets.
+
 ### What about SSL?
 
 Unfortunately Varnish doesn't understand HTTPS requests, so you have to do some creative rerouting of requests to make it work. This is how I do it in my setup:
