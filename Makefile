@@ -1,4 +1,4 @@
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security
+.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -7,7 +7,7 @@ build:
 	set -euo pipefail; \
 	docker build -t $(IMAGE) .
 
-test: build test-existence test-vcl-compile test-smoke test-integration test-security
+test: build test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -113,3 +113,95 @@ test-security:
 	fi; \
 	echo "OK: Container runs as varnish user"; \
 	echo "=== Test: Security PASSED ==="
+
+test-purge:
+	@echo "=== Test: PURGE ==="
+	@set -euo pipefail; \
+	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose logs; \
+		exit 1; \
+	fi; \
+	test_url="http://localhost/?cachebust=$$(openssl rand -hex 8)"; \
+	echo "Priming cache..."; \
+	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi MISS; then \
+		echo "FAIL: Expected X-Cache MISS, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: X-Cache MISS"; \
+	echo "Checking X-Cache HIT..."; \
+	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi HIT; then \
+		echo "FAIL: Expected X-Cache HIT, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: X-Cache HIT"; \
+	echo "Sending PURGE..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE "$$test_url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected PURGE HTTP 200, got $$status"; \
+		exit 1; \
+	fi; \
+	echo "OK: PURGE returned 200"; \
+	echo "Checking X-Cache MISS after PURGE..."; \
+	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi MISS; then \
+		echo "FAIL: Expected X-Cache MISS after PURGE, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: X-Cache MISS after PURGE"; \
+	echo "=== Test: PURGE PASSED ==="
+
+test-grace:
+	@echo "=== Test: Grace period (backend down) ==="
+	@set -euo pipefail; \
+	trap "docker compose up -d web >/dev/null 2>&1; docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose logs; \
+		exit 1; \
+	fi; \
+	test_url="http://localhost/?cachebust=$$(openssl rand -hex 8)"; \
+	echo "Priming cache..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$$test_url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected HTTP 200, got $$status"; \
+		exit 1; \
+	fi; \
+	echo "OK: Cache primed with HTTP 200"; \
+	echo "Stopping web container..."; \
+	docker compose stop web; \
+	echo "Waiting for backend to be marked sick (~15s)..."; \
+	sleep 18; \
+	echo "Checking request with backend down..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$$test_url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected HTTP 200 from grace, got $$status"; \
+		exit 1; \
+	fi; \
+	echo "OK: HTTP 200 from grace"; \
+	echo "=== Test: Grace period PASSED ==="
