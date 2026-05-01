@@ -1,4 +1,4 @@
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration
+.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -7,7 +7,7 @@ build:
 	set -euo pipefail; \
 	docker build -t $(IMAGE) .
 
-test: build test-existence test-vcl-compile test-smoke test-integration
+test: build test-existence test-vcl-compile test-smoke test-integration test-security
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -102,3 +102,14 @@ test-integration:
 	fi; \
 	echo "OK: X-Cache HIT"; \
 	echo "=== Test: Integration test PASSED ==="
+
+test-security:
+	@echo "=== Test: Security (non-root user) ==="
+	@set -euo pipefail; \
+	user=$$(docker run --rm $(IMAGE) whoami); \
+	if [ "$$user" != "varnish" ]; then \
+		echo "FAIL: Expected user 'varnish', got '$$user'"; \
+		exit 1; \
+	fi; \
+	echo "OK: Container runs as varnish user"; \
+	echo "=== Test: Security PASSED ==="

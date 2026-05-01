@@ -11,6 +11,10 @@ services:
     depends_on:
       - web
     restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
 
   web:
     image: nginx:alpine
