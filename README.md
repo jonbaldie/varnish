@@ -59,6 +59,16 @@ docker compose up
 
 The sample `default.vcl` points Varnish to the `web` backend and adds basic caching rules for static assets.
 
+### Testing
+
+Use `make test` for the default build, smoke, integration, and happy-path cache checks.
+
+Use `make test-e2e-hard` when you need the stronger hostile backend proofs for cookie stripping and cache isolation:
+
+```bash
+make test-e2e-hard
+```
+
 ### Hostile backend fixture contract
 
 The existing `nginx:alpine` compose backend remains the happy-path smoke fixture. A separate hostile backend fixture should only exist to prove behaviors that nginx cannot expose clearly enough for E2E assertions.

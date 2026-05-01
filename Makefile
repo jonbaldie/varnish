@@ -1,4 +1,4 @@
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
+.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -8,6 +8,8 @@ build:
 	docker build -t $(IMAGE) .
 
 test: build test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
+
+test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
 
 test-existence:
 	@echo "=== Test: File existence ==="
