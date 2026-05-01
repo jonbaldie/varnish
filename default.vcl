@@ -31,7 +31,7 @@ sub vcl_recv {
     }
 
     if (req.http.Accept-Encoding) {
-        if (req.url ~ "\.(jpg|jpeg|png|gif|gz|tgz|bz2|tbz|mp3|ogg|webm)$") {
+        if (req.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
             unset req.http.Accept-Encoding;
         } elsif (req.http.Accept-Encoding ~ "gzip") {
             set req.http.Accept-Encoding = "gzip";
@@ -43,7 +43,7 @@ sub vcl_recv {
     }
 
     # Remove cookies for static assets to improve cache hit rate
-    if (req.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$") {
+    if (req.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
         unset req.http.Cookie;
     }
 
@@ -59,7 +59,7 @@ sub vcl_recv {
 }
 
 sub vcl_backend_response {
-    if (bereq.url ~ "\.(png|gif|jpg|jpeg|svg|css|js|ico|woff|woff2|ttf|eot|otf)$") {
+    if (bereq.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
         set beresp.ttl = 1d;
         set beresp.grace = 7d;
     } else {
