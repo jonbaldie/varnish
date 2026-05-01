@@ -2,6 +2,7 @@ version: '3'
 
 services:
   varnish:
+    build: .
     image: jonbaldie/varnish
     ports:
       - "80:80"
