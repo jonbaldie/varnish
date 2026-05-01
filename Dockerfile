@@ -13,7 +13,7 @@ ENV VARNISH_START /usr/sbin/varnishd -F -f /etc/varnish/default.vcl -a 0.0.0.0:8
 ADD start.sh /start.sh
 RUN chown varnish:varnish /start.sh && chmod +x /start.sh
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD pidof varnishd || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD varnishadm ping || exit 1
 
 USER varnish
 CMD ["/start.sh"]
