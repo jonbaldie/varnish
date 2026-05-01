@@ -50,6 +50,10 @@ sub vcl_recv {
         return (pass);
     }
 
+    if (req.http.Cookie) {
+        return (pass);
+    }
+
     return (hash);
 }
 
