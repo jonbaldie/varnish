@@ -1,0 +1,27 @@
+services:
+  hostile-backend:
+    build:
+      context: ./test/hostile-backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 1s
+
+  varnish-hostile:
+    build: .
+    image: jonbaldie/varnish
+    ports:
+      - "8081:80"
+    volumes:
+      - ./test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro
+    depends_on:
+      hostile-backend:
+        condition: service_healthy
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
