@@ -1,8 +1,9 @@
 FROM debian:bookworm-slim
 LABEL maintainer="Jonathan Baldie <jon@jonbaldie.com>"
 
+ADD default.vcl default.vcl
 ADD install.sh install.sh
-RUN chmod +x install.sh && sh ./install.sh && rm install.sh
+RUN chmod +x install.sh && sh ./install.sh && rm install.sh default.vcl
 
 VOLUME ["/var/lib/varnish", "/etc/varnish"]
 EXPOSE 80

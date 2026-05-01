@@ -30,6 +30,20 @@ Expose Varnish on port 80, and point it to your web server using a `vcl` config 
 
 For this Docker image, you can `ADD` your `default.vcl` file into `/etc/varnish/` inside the container. For my own setup I use Docker Compose with mounted volumes, which means any edits I make don't mean I have to rebuild the container.
 
+### VCL Configuration
+
+`default.vcl` is the single source of truth for all Varnish configuration. It includes:
+
+- **Backend health probe** — monitors the backend with a 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3.
+- **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
+- **Accept-Encoding normalization** — normalises to `gzip` or `deflate` for text content, unsets for binary assets (images, media, archives).
+- **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
+- **Cache TTLs** — 1 day TTL with 7 day grace for static assets, 1 hour grace for other content.
+- **500 error handling** — sets TTL to 0 and 24h grace for backend 5xx errors.
+- **X-Cache header** — adds `HIT`/`MISS` header for cache observability.
+
+The backend address differs between Docker Compose mode (`web:80`) and standalone mode (`127.0.0.1:8080`). During the Docker build, `install.sh` patches the backend to `127.0.0.1:8080` for standalone use. In Docker Compose, the `default.vcl` is mounted from the host and retains `web:80`.
+
 ### Docker Compose example
 
 This repository includes a `docker-compose.yml` file and a sample `default.vcl` that demonstrates a typical setup:
