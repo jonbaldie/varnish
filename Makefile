@@ -1,4 +1,4 @@
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
+.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-hostile-static-cookie
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -202,6 +202,77 @@ test-grace:
 	if [ "$$status" != "200" ]; then \
 		echo "FAIL: Expected HTTP 200 from grace, got $$status"; \
 		exit 1; \
-	fi; \
+		fi; \
 	echo "OK: HTTP 200 from grace"; \
 	echo "=== Test: Grace period PASSED ==="
+
+test-hostile-static-cookie:
+	@echo "=== Test: Hostile static asset strips cookies and stays cacheable ==="
+	@set -euo pipefail; \
+	trap "docker compose -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose -f docker-compose.yml -f docker-compose.hostile.yml up -d --build hostile-backend varnish-hostile; \
+	echo "Waiting for hostile services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost:8081/ready >/dev/null 2>&1; then \
+			echo "OK: Hostile services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Hostile services did not become ready within 60s"; \
+		docker compose -f docker-compose.yml -f docker-compose.hostile.yml logs; \
+		exit 1; \
+	fi; \
+	url="http://localhost:8081/static/app.css"; \
+	echo "Purging any existing cached asset..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE "$$url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected PURGE HTTP 200, got $$status"; \
+		exit 1; \
+	fi; \
+	tmpdir=$$(mktemp -d); \
+	trap "rm -rf $$tmpdir; docker compose -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	resp1_headers="$$tmpdir/resp1.headers"; \
+	resp1_body="$$tmpdir/resp1.body"; \
+	resp2_headers="$$tmpdir/resp2.headers"; \
+	resp2_body="$$tmpdir/resp2.body"; \
+	echo "Requesting static asset with Cookie (first request)..."; \
+	curl -sS --max-time 10 -D "$$resp1_headers" -o "$$resp1_body" -H 'Cookie: client=alice' "$$url"; \
+	if ! grep -q '^asset=app.css$$' "$$resp1_body"; then \
+		echo "FAIL: Expected first response body to contain asset=app.css"; \
+		cat "$$resp1_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -q '^cookie=none$$' "$$resp1_body"; then \
+		echo "FAIL: Expected first response body to contain cookie=none"; \
+		cat "$$resp1_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -qi '^X-Cache: MISS' "$$resp1_headers"; then \
+		echo "FAIL: Expected first response X-Cache: MISS"; \
+		cat "$$resp1_headers"; \
+		exit 1; \
+	fi; \
+	echo "OK: First request reached origin without Cookie and was a MISS"; \
+	echo "Requesting static asset with Cookie (second request)..."; \
+	curl -sS --max-time 10 -D "$$resp2_headers" -o "$$resp2_body" -H 'Cookie: client=alice' "$$url"; \
+	if ! grep -q '^asset=app.css$$' "$$resp2_body"; then \
+		echo "FAIL: Expected second response body to contain asset=app.css"; \
+		cat "$$resp2_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -q '^cookie=none$$' "$$resp2_body"; then \
+		echo "FAIL: Expected second response body to contain cookie=none"; \
+		cat "$$resp2_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -qi '^X-Cache: HIT' "$$resp2_headers"; then \
+		echo "FAIL: Expected second response X-Cache: HIT"; \
+		cat "$$resp2_headers"; \
+		exit 1; \
+	fi; \
+	echo "OK: Second request stayed cacheable and was a HIT"; \
+	echo "=== Test: Hostile static asset strips cookies and stays cacheable PASSED ==="
