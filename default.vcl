@@ -17,6 +17,8 @@ backend default {
 acl purge {
     "localhost";
     "127.0.0.1";
+    "172.16.0.0"/12;
+    "192.168.0.0"/16;
 }
 
 sub vcl_recv {
