@@ -426,7 +426,7 @@ test-hostile-set-cookie-isolation:
 		fi; \
 	done; \
 	project="varnish-hostile-set-cookie-$$$$"; \
-	trap "rm -rf $$tmpdir $$lockdir; docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
 	docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml up -d --build hostile-backend varnish-hostile; \
 	echo "Waiting for hostile services to be ready..."; \
 	timeout=60; \
