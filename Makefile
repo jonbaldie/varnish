@@ -1,6 +1,6 @@
-.SHELL := /bin/bash
+SHELL := /bin/bash
 
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
+.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -8,6 +8,17 @@ CONTAINER_PREFIX := varnish-test
 build:
 	set -euo pipefail; \
 	docker build -t $(IMAGE) .
+
+# test-makefile-shell: Validates the shell environment supports required features
+# This is a canary test that catches shell compatibility issues early, before they
+# manifest as cryptic failures in other tests. It verifies that:
+# - The shell supports 'set -euo pipefail' (bash-specific feature)
+# - The environment is properly configured for running the test suite
+# Run this first if you suspect shell configuration issues.
+test-makefile-shell:
+	@echo "=== Test: Makefile shell compatibility ==="
+	@set -euo pipefail; echo "OK: pipefail supported"
+	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
 test: build test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
 
