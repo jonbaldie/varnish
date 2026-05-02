@@ -1,3 +1,5 @@
+.SHELL := /bin/bash
+
 .PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
 
 IMAGE := jonbaldie/varnish:latest
