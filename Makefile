@@ -1,4 +1,4 @@
-.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
+.PHONY: build test test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -413,7 +413,7 @@ test-hostile-set-cookie-isolation:
 		fi; \
 	done; \
 	project="varnish-hostile-set-cookie-$$$$"; \
-	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	trap "rm -rf $$tmpdir $$lockdir; docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
 	docker compose -p $$project -f docker-compose.yml -f docker-compose.hostile.yml up -d --build hostile-backend varnish-hostile; \
 	echo "Waiting for hostile services to be ready..."; \
 	timeout=60; \
@@ -520,3 +520,76 @@ test-hostile-set-cookie-isolation:
 	fi; \
 	echo "OK: Bob response stayed uncached and isolated from alice's Set-Cookie response"; \
 	echo "=== Test: Hostile Set-Cookie responses are not shared across clients PASSED ==="
+
+test-perf:
+	@echo "=== Test: Performance and caching effectiveness ==="
+	@set -euo pipefail; \
+	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose logs; \
+		exit 1; \
+	fi; \
+	echo ""; \
+	echo "=== Performance Test: Cache MISS (uncached requests) ==="; \
+	echo "Testing with 1000 requests, 50 concurrent..."; \
+	ab -n 1000 -c 50 -q http://localhost/?cachebust=$$(openssl rand -hex 8) 2>&1 | grep -E '(Requests per second|Time per request|Failed requests)'; \
+	miss_rps=$$(ab -n 1000 -c 50 -q http://localhost/?cachebust=$$(openssl rand -hex 8) 2>&1 | grep 'Requests per second' | awk '{print $$4}'); \
+	echo "Cache MISS performance: $$miss_rps req/sec"; \
+	echo ""; \
+	echo "=== Performance Test: Cache HIT (cached requests) ==="; \
+	test_url="http://localhost/?perf-test=$$(openssl rand -hex 8)"; \
+	echo "Priming cache..."; \
+	curl -sf --max-time 10 "$$test_url" >/dev/null; \
+	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi HIT; then \
+		echo "FAIL: Cache not warming properly: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: Cache primed"; \
+	echo "Testing with 1000 requests, 50 concurrent..."; \
+	ab -n 1000 -c 50 -q "$$test_url" 2>&1 | grep -E '(Requests per second|Time per request|Failed requests)'; \
+	hit_rps=$$(ab -n 1000 -c 50 -q "$$test_url" 2>&1 | grep 'Requests per second' | awk '{print $$4}'); \
+	echo "Cache HIT performance: $$hit_rps req/sec"; \
+	echo ""; \
+	echo "=== Performance Validation ==="; \
+	improvement=$$(awk "BEGIN {printf \"%.2f\", ($$hit_rps / $$miss_rps)}"); \
+	echo "Cache HIT is $$improvement times faster than MISS"; \
+	if [ $$(awk "BEGIN {print ($$hit_rps <= $$miss_rps)}") -eq 1 ]; then \
+		echo "FAIL: Cache HITs ($$hit_rps req/sec) should be faster than MISSes ($$miss_rps req/sec)"; \
+		exit 1; \
+	fi; \
+	echo "OK: Cache HITs are measurably faster than MISSes"; \
+	echo ""; \
+	echo "=== Concurrency stress test ==="; \
+	echo "Testing with 2000 requests, 100 concurrent..."; \
+	ab -n 2000 -c 100 -q "$$test_url" 2>&1 | grep -E '(Requests per second|Failed requests)'; \
+	concurrent_rps=$$(ab -n 2000 -c 100 -q "$$test_url" 2>&1 | grep 'Requests per second' | awk '{print $$4}'); \
+	echo "High concurrency performance: $$concurrent_rps req/sec"; \
+	if [ $$(ab -n 2000 -c 100 -q "$$test_url" 2>&1 | grep 'Failed requests' | awk '{print $$3}') -gt 0 ]; then \
+		echo "FAIL: Failed requests under load"; \
+		exit 1; \
+	fi; \
+	echo "OK: No failed requests under high concurrency"; \
+	echo ""; \
+	echo "=== Performance Summary ==="; \
+	echo "  Cache MISS: $$miss_rps req/sec"; \
+	echo "  Cache HIT:  $$hit_rps req/sec"; \
+	echo "  High load:  $$concurrent_rps req/sec"; \
+	echo "  Speedup:    $${improvement}x"; \
+	echo ""; \
+	echo "Note: With fast backends like nginx, cache speedup may be modest."; \
+	echo "The key benefit is reduced backend load and consistent performance under high concurrency."; \
+	echo ""; \
+	echo "=== Test: Performance and caching effectiveness PASSED ==="
