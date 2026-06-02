@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
+.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -22,7 +22,7 @@ test-makefile-shell:
 
 test: build test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
 
-test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation
+test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -533,6 +533,99 @@ test-hostile-set-cookie-isolation:
 	fi; \
 	echo "OK: Bob response stayed uncached and isolated from alice's Set-Cookie response"; \
 	echo "=== Test: Hostile Set-Cookie responses are not shared across clients PASSED ==="
+
+test-5xx-not-cached:
+	@echo "=== Test: Backend 5xx responses are not served from cache ==="
+	@set -euo pipefail; \
+	lockdir="/tmp/varnish-5xx-test-8082.lock"; \
+	acquired=0; \
+	while [ $$acquired -eq 0 ]; do \
+		if mkdir "$$lockdir" 2>/dev/null; then \
+			acquired=1; \
+		else \
+			sleep 1; \
+		fi; \
+	done; \
+	project="varnish-5xx-test-$$$$"; \
+	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.5xx-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose -p $$project -f docker-compose.5xx-test.yml up -d --build; \
+	echo "Waiting for services to be ready (includes backend probe warm-up)..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 5 http://localhost:8082/ready >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose -p $$project -f docker-compose.5xx-test.yml logs; \
+		exit 1; \
+	fi; \
+	url="http://localhost:8082/error"; \
+	echo "Purging any existing cached error response..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE "$$url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected PURGE HTTP 200, got $$status"; \
+		exit 1; \
+	fi; \
+	tmpdir=$$(mktemp -d); \
+	trap "rm -rf $$tmpdir $$lockdir; docker compose -p $$project -f docker-compose.5xx-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	resp1_headers="$$tmpdir/resp1.headers"; \
+	resp1_body="$$tmpdir/resp1.body"; \
+	resp2_headers="$$tmpdir/resp2.headers"; \
+	resp2_body="$$tmpdir/resp2.body"; \
+	echo "Requesting /error (first request)..."; \
+	curl -sS --max-time 10 -D "$$resp1_headers" -o "$$resp1_body" "$$url" || true; \
+	if ! grep -q '^route=error$$' "$$resp1_body"; then \
+		echo "FAIL: Expected first response body to contain route=error"; \
+		cat "$$resp1_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -qi '^X-Cache: MISS' "$$resp1_headers"; then \
+		echo "FAIL: Expected first error response X-Cache: MISS"; \
+		cat "$$resp1_headers"; \
+		exit 1; \
+	fi; \
+	req1_id=$$(grep -i '^X-Backend-Request-Id:' "$$resp1_headers" | tr -d '\r' | cut -d' ' -f2); \
+	if [ -z "$$req1_id" ]; then \
+		echo "FAIL: Expected first response to include X-Backend-Request-Id"; \
+		cat "$$resp1_headers"; \
+		exit 1; \
+	fi; \
+	echo "OK: First error response was a MISS from origin (request_id=$$req1_id)"; \
+	echo "Requesting /error again immediately (second request)..."; \
+	curl -sS --max-time 10 -D "$$resp2_headers" -o "$$resp2_body" "$$url" || true; \
+	if ! grep -q '^route=error$$' "$$resp2_body"; then \
+		echo "FAIL: Expected second response body to contain route=error"; \
+		cat "$$resp2_body"; \
+		exit 1; \
+	fi; \
+	if ! grep -qi '^X-Cache: MISS' "$$resp2_headers"; then \
+		echo "FAIL: Expected second error response X-Cache: MISS (error must not be cached)"; \
+		cat "$$resp2_headers"; \
+		exit 1; \
+	fi; \
+	req2_id=$$(grep -i '^X-Backend-Request-Id:' "$$resp2_headers" | tr -d '\r' | cut -d' ' -f2); \
+	if [ -z "$$req2_id" ]; then \
+		echo "FAIL: Expected second response to include X-Backend-Request-Id"; \
+		cat "$$resp2_headers"; \
+		exit 1; \
+	fi; \
+	if [ "$$req1_id" = "$$req2_id" ]; then \
+		echo "FAIL: Both requests returned the same X-Backend-Request-Id ($$req1_id)"; \
+		echo "      Error response was served from cache rather than fetched from origin"; \
+		echo "--- request 1 headers ---"; \
+		cat "$$resp1_headers"; \
+		echo "--- request 2 headers ---"; \
+		cat "$$resp2_headers"; \
+		exit 1; \
+	fi; \
+	echo "OK: Second error response was also a MISS from origin (request_id=$$req2_id)"; \
+	echo "OK: Distinct backend request IDs confirm origin was hit twice, error was not cached"; \
+	echo "=== Test: Backend 5xx responses are not served from cache PASSED ==="
 
 test-perf:
 	@echo "=== Test: Performance and caching effectiveness ==="
