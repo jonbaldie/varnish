@@ -57,9 +57,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         cookie_header = self.headers.get("Cookie")
 
-        # Health check endpoint for container readiness probes
-        if self.path == "/ready":
+        # Health check endpoints for container readiness probes.
+        # "/" is used by the main VCL backend probe; "/ready" by the hostile
+        # compose healthcheck. Both must return 200 so Varnish marks the
+        # backend as healthy before any test assertions run.
+        if self.path in ("/", "/ready"):
             self.respond(200, "ready=ok\n")
+            return
+
+        # Proves 5xx backend responses are not served from cache.
+        # Test assertion: two consecutive requests must both produce
+        # X-Cache: MISS and distinct X-Backend-Request-Id values,
+        # proving Varnish hit origin each time rather than caching the error.
+        if self.path == "/error":
+            body = "route=error\n"
+            self.respond(500, body)
             return
 
         # Proves Varnish strips cookies from cacheable static assets.
