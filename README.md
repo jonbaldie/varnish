@@ -1,170 +1,110 @@
-### Varnish Docker Repository
+# Varnish
 
 [![Docker CI](https://github.com/jonbaldie/varnish/actions/workflows/docker.yml/badge.svg)](https://github.com/jonbaldie/varnish/actions/workflows/docker.yml)
 
-To use:
+Varnish is basically Redis for HTTP requests. Instead of serving identical HTTP requests and eating up resources, it caches them for as long as you like. Put it in front of your HTTP server and it intercepts everything — one of the simplest ways to make a website faster.
 
-`docker pull jonbaldie/varnish`
+## Quick Start
 
-Alternatively you can `git clone` the repo and run `make` from the project root.
+Pull the image:
 
-### Version Matrix
+```bash
+docker pull jonbaldie/varnish
+```
+
+Or clone the repo and build locally:
+
+```bash
+make
+```
+
+## Version Matrix
 
 | Debian Version | Varnish Version |
 |----------------|-----------------|
 | bookworm       | 7.1.1           |
 
-### What is Varnish?
+## How It Works
 
-It's basically Redis for HTTP requests.
+Expose Varnish on port 80 and point it at your web server via a `vcl` config file. See the [Varnish docs](https://varnish-cache.org/docs/) for the full picture.
 
-Instead of serving identical HTTP requests, eating up resources and bandwidth, Varnish caches requests for as long you like.
+For this image, `ADD` your `default.vcl` into `/etc/varnish/` inside the container. Using Docker Compose with mounted volumes means you can edit the config without rebuilding.
 
-Just put it in front of your HTTP server, and it will intercept all HTTP requests.
+## VCL Configuration
 
-It's one of the simplest ways to make your website faster.
+`default.vcl` is the single source of truth for Varnish config. It includes:
 
-### How does it work?
-
-Expose Varnish on port 80, and point it to your web server using a `vcl` config file. See the Varnish docs (and Google) for details on how to do this.
-
-For this Docker image, you can `ADD` your `default.vcl` file into `/etc/varnish/` inside the container. For my own setup I use Docker Compose with mounted volumes, which means any edits I make don't mean I have to rebuild the container.
-
-### VCL Configuration
-
-`default.vcl` is the single source of truth for all Varnish configuration. It includes:
-
-- **Backend health probe** — monitors the backend with a 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3.
+- **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3.
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
-- **Accept-Encoding normalization** — normalises to `gzip` or `deflate` for text content, unsets for binary assets (images, media, archives).
+- **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
-- **Cache TTLs** — 1 day TTL with 7 day grace for static assets, 1 hour grace for other content.
+- **Cache TTLs** — 1 day TTL with 7 day grace for static assets; 1 hour grace for other content.
 - **500 error handling** — sets TTL to 0 and 24h grace for backend 5xx errors.
-- **X-Cache header** — adds `HIT`/`MISS` header for cache observability.
+- **X-Cache header** — adds `HIT`/`MISS` for cache observability.
 
-The backend address differs between Docker Compose mode (`web:80`) and standalone mode (`127.0.0.1:8080`). During the Docker build, `install.sh` patches the backend to `127.0.0.1:8080` for standalone use. In Docker Compose, the `default.vcl` is mounted from the host and retains `web:80`.
+The backend address differs between modes: Docker Compose uses `web:80`; standalone uses `127.0.0.1:8080`. The `install.sh` script patches this during the Docker build for standalone use.
 
-### Docker Compose example
+## Docker Compose Example
 
-This repository includes a `docker-compose.yml` file and a sample `default.vcl` that demonstrates a typical setup:
+The repo includes a `docker-compose.yml` and a sample `default.vcl`:
 
-- `varnish` service running this image on port 80, with the VCL file mounted from the host.
-- `web` backend service running the official `nginx:alpine` image.
-
-To try it out, run:
+- `varnish` service on port 80, with the VCL mounted from the host.
+- `web` backend running `nginx:alpine`.
 
 ```bash
 docker compose up
 ```
 
-The sample `default.vcl` points Varnish to the `web` backend and adds basic caching rules for static assets.
+## SSL
+
+Varnish doesn't understand HTTPS natively, so requests need rerouting:
+
+```
+HTTPS → Nginx:443 → Varnish:80 → Nginx:80 (internal) → Website
+HTTP  → Varnish:80 → Nginx:80 (internal) → Website
+```
+
+With Docker networking this is straightforward to set up and performs well.
+
+## Development
 
 ### Testing
 
-Use `make test` for the default build, smoke, integration, and happy-path cache checks.
-
-Use `make test-e2e-hard` when you need the stronger hostile backend proofs for cookie stripping and cache isolation:
-
 ```bash
-make test-e2e-hard
+make test              # default build, smoke, integration, and cache checks
+make test-e2e-hard     # stronger hostile-backend proofs
 ```
 
-### Hostile backend fixture contract
+### Hostile Backend Fixture Contract
 
-The existing `nginx:alpine` compose backend remains the happy-path smoke fixture. A separate hostile backend fixture should only exist to prove behaviors that nginx cannot expose clearly enough for E2E assertions.
+The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate hostile backend fixture exists only to prove behaviours nginx can't expose clearly enough for E2E assertions.
 
-Keep the fixture contract minimal. It only needs three request shapes and enough observability to prove cookie handling and cache isolation.
+**Endpoints required:**
 
-Required fixture endpoints:
+| Endpoint | Purpose |
+|---|---|
+| `GET /static/app.css` | Cacheable static asset; must echo whether a `Cookie` reached origin |
+| `GET /account` | Dynamic pass-through; must echo caller identity from `Cookie` |
+| `GET /set-cookie` | Must return `Set-Cookie`; must not be shared across clients |
 
-- `GET /static/app.css`
-- `GET /account`
-- `GET /set-cookie`
+**Every response must include:**
+- `X-Backend: hostile` — proves the backend handled the request.
+- `X-Backend-Request-Id` — unique per origin hit, used to detect cache reuse.
 
-Required request handling:
+**Response contract:**
 
-- Every response must include an origin marker header such as `X-Backend: hostile` so tests can prove the backend handled the request.
-- Every response must include a per-request backend identity marker such as `X-Backend-Request-Id` with a unique value generated by the backend for that origin hit.
-- `GET /static/app.css` must behave as a cacheable static asset and must echo whether a `Cookie` header reached origin.
-- `GET /account` must behave as a non-static dynamic endpoint, must echo the caller identity derived from the incoming `Cookie`, and must be unsuitable for shared caching.
-- `GET /set-cookie` must return a `Set-Cookie` header and a body marker tied to the triggering client so tests can prove the response is not shared across clients.
+- `/static/app.css` — body contains `asset=app.css` and `cookie=none` when no cookie reached origin. Should be cacheable; tests expect `X-Cache: MISS` then `X-Cache: HIT`.
+- `/account` — body contains `route=account` and `client=<name>` from the cookie. Must not carry `Set-Cookie`. Both requests should produce `X-Cache: MISS` with different request ids.
+- `/set-cookie` — body contains `route=set-cookie` and `client=<name>`. Must include `Set-Cookie: session=<name>; Path=/`. Every request should produce `X-Cache: MISS` with different request ids across clients.
 
-Required response contract:
+**Proof matrix:**
 
-- `GET /static/app.css`
-  - Response body must contain a stable static marker such as `asset=app.css`.
-  - Response body must contain `cookie=none` when no `Cookie` header reached origin.
-  - Response body may contain `cookie=present` if the fixture is called directly and receives one, but Varnish-path tests must expect `cookie=none`.
-  - Response should be cacheable so the Varnish-path proof can assert `X-Cache: MISS` on first request and `X-Cache: HIT` on second request.
-- `GET /account`
-  - Response body must contain a stable route marker such as `route=account`.
-  - Response body must contain a client identity marker derived from the request cookie, for example `client=alice` when the request includes `Cookie: client=alice`.
-  - Response body must contain the backend request id marker so tests can detect whether two client requests hit origin separately.
-  - Response must not carry `Set-Cookie`; this route exists only to prove pass behavior for cookie-bearing non-static requests.
-  - Varnish-path tests must expect pass semantics rather than cache reuse, so both requests should produce `X-Cache: MISS` and different backend request ids.
-- `GET /set-cookie`
-  - Response body must contain a stable route marker such as `route=set-cookie`.
-  - Response body must contain the triggering client identity marker derived from the incoming cookie or request header, for example `client=alice`.
-  - Response must include a `Set-Cookie` header with a deterministic value that includes the triggering client identity, for example `Set-Cookie: session=alice; Path=/`.
-  - Response body must contain the backend request id marker so tests can detect whether two client requests hit origin separately.
-  - Varnish-path tests must expect `X-Cache: MISS` on every request and different backend request ids across clients.
+1. Static asset with `Cookie` strips the cookie before origin — assert `cookie=none`, `X-Cache: MISS` then `HIT`.
+2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
+3. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
 
-Proof matrix for future E2E tests:
+Out of scope: additional routes, extra Cache-Control permutations, replacing the nginx smoke backend.
 
-- Proof 1: static asset request with `Cookie` reaches origin without `Cookie`
-  - Request 1: `GET /static/app.css` with `Cookie: client=alice`
-  - Assert response body contains `asset=app.css`
-  - Assert response body contains `cookie=none`
-  - Assert response header `X-Backend: hostile`
-  - Assert response header `X-Cache: MISS`
-  - Request 2: repeat the same request
-  - Assert response body still contains `asset=app.css`
-  - Assert response body still contains `cookie=none`
-  - Assert response header `X-Cache: HIT`
-- Proof 2: non-static request with `Cookie` is passed and not shared across clients
-  - Request 1: `GET /account` with `Cookie: client=alice`
-  - Assert response body contains `route=account`
-  - Assert response body contains `client=alice`
-  - Capture `X-Backend-Request-Id` or equivalent body marker as `req_a`
-  - Assert response header `X-Cache: MISS`
-  - Request 2: `GET /account` with `Cookie: client=bob`
-  - Assert response body contains `route=account`
-  - Assert response body contains `client=bob`
-  - Capture `X-Backend-Request-Id` or equivalent body marker as `req_b`
-  - Assert response header `X-Cache: MISS`
-  - Assert `req_a != req_b`
-  - Assert bob's response does not contain `client=alice`
-- Proof 3: response carrying `Set-Cookie` is not shared from cache
-  - Request 1: `GET /set-cookie` with `Cookie: client=alice`
-  - Assert response body contains `route=set-cookie`
-  - Assert response body contains `client=alice`
-  - Assert response header includes `Set-Cookie: session=alice`
-  - Capture `X-Backend-Request-Id` or equivalent body marker as `req_a`
-  - Assert response header `X-Cache: MISS`
-  - Request 2: `GET /set-cookie` with `Cookie: client=bob`
-  - Assert response body contains `route=set-cookie`
-  - Assert response body contains `client=bob`
-  - Assert response header includes `Set-Cookie: session=bob`
-  - Capture `X-Backend-Request-Id` or equivalent body marker as `req_b`
-  - Assert response header `X-Cache: MISS`
-  - Assert `req_a != req_b`
-  - Assert bob's response does not contain `client=alice`
-  - Assert bob's response does not include `Set-Cookie: session=alice`
-
-Out of scope for this fixture contract:
-
-- Additional routes beyond the three listed above
-- Cache-Control permutations beyond the minimum needed to make `GET /static/app.css` cacheable and the other two proofs observable
-- Replacing the existing nginx compose backend or its smoke coverage
-
-### What about SSL?
-
-Unfortunately Varnish doesn't understand HTTPS requests, so you have to do some creative rerouting of requests to make it work. This is how I do it in my setup:
-
-HTTPS request ==> Nginx container port 443 ==> Varnish container port 80 ==> Nginx port 80 (internal) ==> Website.
-
-HTTP request ==> Varnish container port 80 ==> Nginx port 80 (internal) ==> Website.
-
-This may look ugly, but fortunately with Docker networking this is surprisingly easy to set up, and very performant.
+---
 
 (c) 2017 Jonathan Baldie
