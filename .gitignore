@@ -1,9 +1,10 @@
 
 # Beads / Dolt files (added by bd init)
+.beads/
 .dolt/
 *.db
 .beads-credential-key
 .worktrees/
 
-# Serena auto-generated memories
-.serena/memories/
+# Serena
+.serena/
