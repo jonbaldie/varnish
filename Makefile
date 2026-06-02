@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached
+.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -22,7 +22,7 @@ test-makefile-shell:
 
 test: build test-existence test-vcl-compile test-smoke test-integration test-security test-purge test-grace
 
-test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached
+test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -626,6 +626,189 @@ test-5xx-not-cached:
 	echo "OK: Second error response was also a MISS from origin (request_id=$$req2_id)"; \
 	echo "OK: Distinct backend request IDs confirm origin was hit twice, error was not cached"; \
 	echo "=== Test: Backend 5xx responses are not served from cache PASSED ==="
+
+test-purge-unauthorized:
+	@echo "=== Test: Unauthorized PURGE from outside ACL returns 405 ==="
+	@set -euo pipefail; \
+	lockdir="/tmp/varnish-purge-acl-test-8085.lock"; \
+	acquired=0; \
+	while [ $$acquired -eq 0 ]; do \
+		if mkdir "$$lockdir" 2>/dev/null; then \
+			acquired=1; \
+		else \
+			sleep 1; \
+		fi; \
+	done; \
+	project="varnish-purge-acl-$$$$"; \
+	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.purge-acl-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose -p $$project -f docker-compose.purge-acl-test.yml up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 5 http://localhost:8085/ready >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose -p $$project -f docker-compose.purge-acl-test.yml logs; \
+		exit 1; \
+	fi; \
+	echo "Verifying authorized PURGE from host (IP in ACL) succeeds..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X PURGE http://localhost:8085/); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected authorized PURGE to return 200, got $$status"; \
+		exit 1; \
+	fi; \
+	echo "OK: Authorized PURGE returns 200"; \
+	echo "Testing unauthorized PURGE from 203.0.113.100 (outside ACL)..."; \
+	net="$$(docker network ls --filter "name=$${project}" --format '{{.Name}}' | grep "_external$$")"; \
+	if [ -z "$$net" ]; then \
+		echo "FAIL: Could not find external test network for project $$project"; \
+		docker network ls --filter "name=$${project}"; \
+		exit 1; \
+	fi; \
+	status=$$(docker run --rm \
+		--network "$$net" \
+		--ip 203.0.113.100 \
+		alpine \
+		sh -c "apk add -q curl && curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE http://203.0.113.2/"); \
+	if [ "$$status" != "405" ]; then \
+		echo "FAIL: Expected 405 for unauthorized PURGE from 203.0.113.100, got $$status"; \
+		exit 1; \
+	fi; \
+	echo "OK: Unauthorized PURGE from 203.0.113.100 returns 405"; \
+	echo "=== Test: Unauthorized PURGE from outside ACL returns 405 PASSED ==="
+
+test-post-not-cached:
+	@echo "=== Test: POST to a cached URL bypasses cache and hits origin ==="
+	@set -euo pipefail; \
+	lockdir="/tmp/varnish-post-test-8084.lock"; \
+	acquired=0; \
+	while [ $$acquired -eq 0 ]; do \
+		if mkdir "$$lockdir" 2>/dev/null; then \
+			acquired=1; \
+		else \
+			sleep 1; \
+		fi; \
+	done; \
+	project="varnish-post-test-$$$$"; \
+	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.post-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose -p $$project -f docker-compose.post-test.yml up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost:8084/ready >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose -p $$project -f docker-compose.post-test.yml logs; \
+		exit 1; \
+	fi; \
+	url="http://localhost:8084/static/app.css"; \
+	echo "Purging any existing cached asset..."; \
+	curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE "$$url" >/dev/null; \
+	tmpdir=$$(mktemp -d); \
+	trap "rm -rf $$tmpdir $$lockdir; docker compose -p $$project -f docker-compose.post-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	echo "Priming cache with GET (first request, expect MISS)..."; \
+	cache=$$(curl -sI --max-time 10 "$$url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi MISS; then \
+		echo "FAIL: Expected X-Cache MISS on first GET, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "Confirming GET is cached (second request, expect HIT)..."; \
+	cache=$$(curl -sI --max-time 10 "$$url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi HIT; then \
+		echo "FAIL: Expected X-Cache HIT on second GET, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: GET response is cached"; \
+	echo "Sending POST to the same cached URL..."; \
+	post_headers="$$tmpdir/post.headers"; \
+	post_body="$$tmpdir/post.body"; \
+	curl -sS --max-time 10 -X POST -D "$$post_headers" -o "$$post_body" "$$url"; \
+	post_cache=$$(grep -i x-cache "$$post_headers" || true); \
+	if ! echo "$$post_cache" | grep -qi MISS; then \
+		echo "FAIL: POST returned cached GET response (X-Cache: HIT) — non-GET methods must bypass cache"; \
+		echo "--- POST response headers ---"; \
+		cat "$$post_headers"; \
+		exit 1; \
+	fi; \
+	post_request_id=$$(grep -i '^X-Backend-Request-Id:' "$$post_headers" | tr -d '\r' | cut -d' ' -f2); \
+	if [ -z "$$post_request_id" ]; then \
+		echo "FAIL: POST response missing X-Backend-Request-Id — did not reach origin"; \
+		cat "$$post_headers"; \
+		exit 1; \
+	fi; \
+	echo "OK: POST bypassed cache, reached origin (request_id=$$post_request_id, X-Cache: MISS)"; \
+	echo "=== Test: POST to a cached URL bypasses cache and hits origin PASSED ==="
+
+test-grace-stale:
+	@echo "=== Test: Grace serves stale content after TTL expires with backend down ==="
+	@set -euo pipefail; \
+	lockdir="/tmp/varnish-grace-test-8083.lock"; \
+	acquired=0; \
+	while [ $$acquired -eq 0 ]; do \
+		if mkdir "$$lockdir" 2>/dev/null; then \
+			acquired=1; \
+		else \
+			sleep 1; \
+		fi; \
+	done; \
+	project="varnish-grace-stale-$$$$"; \
+	trap "rm -rf $$lockdir; docker compose -p $$project -f docker-compose.grace-test.yml down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose -p $$project -f docker-compose.grace-test.yml up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 5 http://localhost:8083/ready >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose -p $$project -f docker-compose.grace-test.yml logs; \
+		exit 1; \
+	fi; \
+	url="http://localhost:8083/short-cache"; \
+	echo "Priming cache (first request, expect MISS)..."; \
+	cache=$$(curl -sI --max-time 10 "$$url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi MISS; then \
+		echo "FAIL: Expected X-Cache MISS on first request, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "Confirming object is cached (second request, expect HIT)..."; \
+	cache=$$(curl -sI --max-time 10 "$$url" | grep -i x-cache); \
+	if ! echo "$$cache" | grep -qi HIT; then \
+		echo "FAIL: Expected X-Cache HIT on second request, got: $$cache"; \
+		exit 1; \
+	fi; \
+	echo "OK: Object cached with 10s TTL and 1h grace"; \
+	echo "Stopping backend..."; \
+	docker compose -p $$project -f docker-compose.grace-test.yml stop web; \
+	echo "Waiting 22s for TTL to expire (10s) and backend to be marked sick (~15s)..."; \
+	sleep 22; \
+	echo "Requesting stale object with backend down..."; \
+	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$$url"); \
+	if [ "$$status" != "200" ]; then \
+		echo "FAIL: Expected HTTP 200 from grace (stale), got $$status"; \
+		echo "      VCL beresp.grace = 1h means stale content must be served"; \
+		echo "      for up to 1 hour after TTL expires while backend is down"; \
+		exit 1; \
+	fi; \
+	echo "OK: HTTP 200 served from grace after TTL expired and backend is down"; \
+	echo "=== Test: Grace serves stale content after TTL expires with backend down PASSED ==="
 
 test-perf:
 	@echo "=== Test: Performance and caching effectiveness ==="

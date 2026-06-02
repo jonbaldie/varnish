@@ -1,0 +1,45 @@
+services:
+  varnish:
+    build: .
+    image: jonbaldie/varnish
+    ports:
+      - "8085:80"
+    volumes:
+      - ./default.vcl:/etc/varnish/default.vcl:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    networks:
+      backend:
+      external:
+        ipv4_address: 203.0.113.2
+
+  web:
+    build:
+      context: ./test/hostile-backend
+    environment:
+      PORT: "80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+      start_period: 1s
+    restart: unless-stopped
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
+  external:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 203.0.113.0/24

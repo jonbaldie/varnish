@@ -74,6 +74,21 @@ class Handler(BaseHTTPRequestHandler):
             self.respond(500, body)
             return
 
+        # Proves grace period serves stale content when backend is down.
+        # Sets a short TTL (10s) so the test can wait past expiry without
+        # waiting for the 120s Varnish default TTL.
+        # Test assertion: after TTL expires AND backend is sick, a request
+        # must still return 200 because VCL sets beresp.grace = 1h for
+        # non-static content.
+        if self.path == "/short-cache":
+            body = "route=short-cache\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Cache-Control": "public, max-age=10"},
+            )
+            return
+
         # Proves Varnish strips cookies from cacheable static assets.
         # Test assertion: request with Cookie should produce response body
         # containing "cookie=none", proving the Cookie header was removed
@@ -114,6 +129,16 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         self.respond(404, "route=not-found\n")
+
+    def do_POST(self) -> None:
+        """Handle POST requests identically to GET.
+
+        POST requests must never be served from Varnish's cache.  This handler
+        lets the test verify that a POST to a previously-cached URL actually
+        reaches the origin (producing a distinct X-Backend-Request-Id) rather
+        than being served silently from the GET cache.
+        """
+        self.do_GET()
 
     def log_message(self, format: str, *args) -> None:
         return
