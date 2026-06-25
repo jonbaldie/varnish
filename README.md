@@ -30,6 +30,17 @@ Expose Varnish on port 80 and point it at your web server via a `vcl` config fil
 
 For this image, `ADD` your `default.vcl` into `/etc/varnish/` inside the container. Using Docker Compose with mounted volumes means you can edit the config without rebuilding.
 
+## Runtime Configuration
+
+The container starts `varnishd` from named runtime values instead of a single baked command string.
+
+- `VARNISH_LISTEN` defaults to `0.0.0.0:80`
+- `VARNISH_VCL` defaults to `/etc/varnish/default.vcl`
+- `VARNISH_STORAGE` defaults to `malloc,1g`
+- `VARNISH_EXTRA_ARGS` appends extra `varnishd` flags when you need a small escape hatch
+
+For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings.
+
 ## VCL Configuration
 
 `default.vcl` is the single source of truth for Varnish config. It includes:
