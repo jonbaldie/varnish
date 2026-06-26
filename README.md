@@ -49,6 +49,27 @@ The embedded standalone backend configuration also has named values:
 
 These apply only to the embedded `/etc/varnish/backend.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
 
+## Restarting Varnish
+
+This image runs `varnishd` as the container process, not as a distro service.
+Do not run `sudo service varnish restart` inside the container.
+
+Restart the container instead:
+
+```bash
+docker restart <container-name>
+```
+
+With the sample Compose file, restart the Varnish service:
+
+```bash
+docker compose restart varnish
+```
+
+If you changed mounted VCL files, restart the container so `varnishd` starts
+again with the updated configuration. If you changed image files, rebuild first
+with `docker compose up -d --build`.
+
 ## VCL Configuration
 
 `default.vcl` is the compose-facing Varnish config. The standalone image uses the same cache policy with a generated backend include. The config includes:
