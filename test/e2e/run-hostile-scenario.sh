@@ -80,36 +80,42 @@ case "$scenario" in
     services=(hostile-backend varnish-hostile)
     ;;
   5xx)
-    compose_files=("$repo_root/docker-compose.5xx-test.yml")
-    lockdir="/tmp/varnish-5xx-test-8082.lock"
-    project="varnish-5xx-test-$$"
-    readiness_url="http://localhost:8082/ready"
+        compose_files=("$repo_root/docker-compose.e2e-scenario.yml")
+        lockdir="/tmp/varnish-5xx-test-8082.lock"
+        project="varnish-5xx-test-$$"
+        HOSTILE_SCENARIO_PORT=8082
+        readiness_url="http://localhost:8082/ready"
     assertion_script="$repo_root/test/e2e/assert-hostile-5xx.sh"
     services=()
     curl_max_time=5
     ;;
   post)
-    compose_files=("$repo_root/docker-compose.post-test.yml")
-    lockdir="/tmp/varnish-post-test-8084.lock"
-    project="varnish-post-test-$$"
-    readiness_url="http://localhost:8084/ready"
+        compose_files=("$repo_root/docker-compose.e2e-scenario.yml")
+        lockdir="/tmp/varnish-post-test-8084.lock"
+        project="varnish-post-test-$$"
+        HOSTILE_SCENARIO_PORT=8084
+        readiness_url="http://localhost:8084/ready"
     assertion_script="$repo_root/test/e2e/assert-hostile-post.sh"
     services=()
     curl_max_time=5
     ;;
   grace)
-    compose_files=("$repo_root/docker-compose.grace-test.yml")
-    lockdir="/tmp/varnish-grace-stale-8083.lock"
-    project="varnish-grace-stale-$$"
-    readiness_url="http://localhost:8083/ready"
+        compose_files=("$repo_root/docker-compose.e2e-scenario.yml")
+        lockdir="/tmp/varnish-grace-stale-8083.lock"
+        project="varnish-grace-stale-$$"
+        HOSTILE_SCENARIO_PORT=8083
+        readiness_url="http://localhost:8083/ready"
     assertion_script="$repo_root/test/e2e/assert-hostile-grace.sh"
     services=()
     curl_max_time=5
     ;;
   purge-acl)
-    compose_files=("$repo_root/docker-compose.purge-acl-test.yml")
+        compose_files=("$repo_root/docker-compose.e2e-scenario.yml")
     lockdir="/tmp/varnish-purge-acl-test-8085.lock"
-    project="varnish-purge-acl-$$"
+        project="varnish-purge-acl-$$"
+        HOSTILE_SCENARIO_PORT=8085
+        HOSTILE_SCENARIO_SUBNET=203.0.113.0/24
+        HOSTILE_SCENARIO_VARNISH_IP=203.0.113.2
     readiness_url="http://localhost:8085/ready"
     assertion_script="$repo_root/test/e2e/assert-hostile-purge-acl.sh"
     services=()
@@ -121,6 +127,13 @@ case "$scenario" in
 		;;
 esac
 
+export HOSTILE_SCENARIO_PORT="${HOSTILE_SCENARIO_PORT:-}"
+export HOSTILE_SCENARIO_SUBNET="${HOSTILE_SCENARIO_SUBNET:-}"
+export HOSTILE_SCENARIO_VARNISH_IP="${HOSTILE_SCENARIO_VARNISH_IP:-}"
+export COMPOSE_FILE
+COMPOSE_FILE="$(IFS=:; echo "${compose_files[*]}")"
+export COMPOSE_PROJECT_NAME="$project"
+
 trap cleanup EXIT
 
 while ! mkdir "$lockdir" 2>/dev/null; do
@@ -128,6 +141,27 @@ while ! mkdir "$lockdir" 2>/dev/null; do
 done
 
 tmpdir="$(mktemp -d)"
+
+if [ -n "${HOSTILE_SCENARIO_SUBNET:-}" ]; then
+    purge_override="$tmpdir/docker-compose.purge-acl.override.yml"
+    cat >"$purge_override" <<EOF
+services:
+  varnish:
+    networks:
+      backend:
+      external:
+        ipv4_address: ${HOSTILE_SCENARIO_VARNISH_IP:?HOSTILE_SCENARIO_VARNISH_IP is required}
+
+networks:
+  external:
+    ipam:
+      driver: default
+      config:
+        - subnet: ${HOSTILE_SCENARIO_SUBNET:?HOSTILE_SCENARIO_SUBNET is required}
+EOF
+    compose_files+=("$purge_override")
+    COMPOSE_FILE="$(IFS=:; echo "${compose_files[*]}")"
+fi
 
 if [ "${#services[@]}" -gt 0 ]; then
   compose up -d --build "${services[@]}"

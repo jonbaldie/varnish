@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -22,7 +22,7 @@ test-makefile-shell:
 
 test: build test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace
 
-test-e2e-hard: test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+test-e2e-hard: test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -394,6 +394,10 @@ test-hostile-account-cookie-isolation:
 test-hostile-set-cookie-isolation:
 	@echo "=== Test: Hostile Set-Cookie responses not shared across clients ==="
 	@./test/e2e/run-hostile-scenario.sh set-cookie
+
+test-e2e-scenario-config:
+	@echo "=== Test: E2E hostile scenario config ==="
+	@./test/e2e/assert-scenario-compose-config.sh
 
 test-5xx-not-cached:
 	@echo "=== Test: Backend 5xx responses not served from cache ==="

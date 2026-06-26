@@ -19,7 +19,7 @@ assert_same_origin_request_id grace-second "$first_request_id" "second grace req
 echo "OK: Object cached with short TTL and grace"
 
 echo "Stopping backend..."
-docker compose -p "${TEST_PROJECT:?TEST_PROJECT must be set}" -f "$repo_root/docker-compose.grace-test.yml" stop web
+docker compose stop web
 
 echo "Waiting 22s for TTL expiry and backend sickness..."
 sleep 22
