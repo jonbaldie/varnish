@@ -1,11 +1,11 @@
 FROM debian:bookworm-slim
 LABEL maintainer="Jonathan Baldie <jon@jonbaldie.com>"
 
-ADD default.vcl.template default.vcl.template
+ADD embedded-default.vcl embedded-default.vcl
 ADD cache-policy.vcl cache-policy.vcl
 ADD render-vcl.sh render-vcl.sh
 ADD install.sh install.sh
-RUN chmod +x install.sh render-vcl.sh && sh ./install.sh && rm install.sh default.vcl.template cache-policy.vcl render-vcl.sh
+RUN chmod +x install.sh render-vcl.sh && sh ./install.sh && rm install.sh embedded-default.vcl cache-policy.vcl render-vcl.sh
 RUN chown -R varnish:varnish /etc/varnish /var/lib/varnish
 
 VOLUME ["/var/lib/varnish", "/etc/varnish"]

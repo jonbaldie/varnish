@@ -28,7 +28,7 @@ make
 
 Expose Varnish on port 80 and point it at your web server via a `vcl` config file. See the [Varnish docs](https://varnish-cache.org/docs/) for the full picture.
 
-For this image, `ADD` your `default.vcl` into `/etc/varnish/` inside the container. Using Docker Compose with mounted volumes means you can edit the config without rebuilding.
+The standalone image embeds `/etc/varnish/default.vcl` and a generated `/etc/varnish/backend.vcl`. Using Docker Compose with mounted volumes means you can edit the config without rebuilding.
 
 ## Runtime Configuration
 
@@ -41,17 +41,17 @@ The container starts `varnishd` from named runtime values instead of a single ba
 
 For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings.
 
-The embedded standalone VCL also has named backend configuration values:
+The embedded standalone backend configuration also has named values:
 
 - `VARNISH_BACKEND_HOST` defaults to `127.0.0.1`
 - `VARNISH_BACKEND_PORT` defaults to `8080`
 - `VARNISH_BACKEND_PROBE_PATH` defaults to `/`
 
-These apply only to the embedded `/etc/varnish/default.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
+These apply only to the embedded `/etc/varnish/backend.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
 
 ## VCL Configuration
 
-`default.vcl` is the single source of truth for Varnish config. It includes:
+`default.vcl` is the compose-facing Varnish config. The standalone image uses the same cache policy with a generated backend include. The config includes:
 
 - **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. The embedded standalone image can override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.

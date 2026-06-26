@@ -31,7 +31,7 @@ if [ -n "${backend_host}${backend_port}${backend_probe_path}" ]; then
 	VARNISH_BACKEND_HOST="${backend_host:-127.0.0.1}" \
 	VARNISH_BACKEND_PORT="${backend_port:-8080}" \
 	VARNISH_BACKEND_PROBE_PATH="${backend_probe_path:-/}" \
-		/usr/local/bin/render-vcl /etc/varnish/default.vcl.template "${vcl_path}"
+		/usr/local/bin/render-vcl /etc/varnish/backend.vcl
 fi
 
 case "${listen}" in
