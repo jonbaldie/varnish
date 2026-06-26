@@ -368,7 +368,7 @@ test-grace:
 
 test-hostile-static-cookie:
 	@echo "=== Test: Hostile static asset strips cookies and stays cacheable ==="
-	@set -euo pipefail; \
+	@./test/e2e/run-hostile-scenario.sh static-cookie; exit $$?; \
 	lockdir="/tmp/varnish-hostile-8081.lock"; \
 	acquired=0; \
 	while [ $$acquired -eq 0 ]; do \
