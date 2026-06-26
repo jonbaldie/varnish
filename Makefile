@@ -43,13 +43,20 @@ test-vcl-compile:
 	@echo "=== Test: VCL compilation ==="
 	@set -euo pipefail; \
 	name="$(CONTAINER_PREFIX)-emb-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
+	docker run --rm --name $$name $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
 	echo "OK: Embedded VCL compiles"; \
+	name="$(CONTAINER_PREFIX)-emb-config-$$(openssl rand -hex 4)"; \
+	docker run --rm --name $$name \
+		-e VARNISH_BACKEND_HOST=localhost \
+		-e VARNISH_BACKEND_PORT=9090 \
+		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
+		$(IMAGE) /bin/bash -lc '/usr/local/bin/render-vcl /etc/varnish/default.vcl.template /tmp/configured.vcl && grep -q "\\.host = \"localhost\";" /tmp/configured.vcl && grep -q "\\.port = \"9090\";" /tmp/configured.vcl && grep -q "\\.url = \"/healthz\";" /tmp/configured.vcl && /usr/sbin/varnishd -C -f /tmp/configured.vcl >/dev/null 2>&1'; \
+	echo "OK: Embedded VCL compiles with configured backend output"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
+	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
 	echo "OK: Repo VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-hostile-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 -v $$(pwd)/test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
+	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 -v $$(pwd)/test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
 	echo "OK: Hostile VCL compiles"; \
 	echo "=== Test: VCL compilation PASSED ==="
 test-smoke:
@@ -83,8 +90,8 @@ test-smoke:
 test-smoke-runtime-interface:
 	@echo "=== Test: Runtime start interface ==="
 	@set -euo pipefail; \
-		name="$(CONTAINER_PREFIX)-runtime-$$(openssl rand -hex 4)"; \
-		host_port=18081; \
+	name="$(CONTAINER_PREFIX)-runtime-$$(openssl rand -hex 4)"; \
+	host_port=18081; \
 		tmpdir=$$(mktemp -d); \
 		trap "docker rm -f $$name >/dev/null 2>&1; rm -rf $$tmpdir" EXIT; \
 		docker run -d --name $$name \
@@ -133,13 +140,84 @@ test-smoke-runtime-interface:
 			cat "$$log_file"; \
 			exit 1; \
 		fi; \
-		if ! grep -q "Invalid VARNISH_LISTEN" "$$log_file"; then \
-			echo "FAIL: invalid VARNISH_LISTEN should fail clearly"; \
-			cat "$$log_file"; \
-			exit 1; \
+	if ! grep -q "Invalid VARNISH_LISTEN" "$$log_file"; then \
+		echo "FAIL: invalid VARNISH_LISTEN should fail clearly"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	log_file="$$tmpdir/start-backend-conflict.log"; \
+	set +e; \
+	docker run --rm -e VARNISH_START='echo hi' -e VARNISH_BACKEND_HOST=localhost $(IMAGE) >"$$log_file" 2>&1 & \
+	pid=$$!; \
+	for _ in 1 2 3 4 5; do \
+		if ! kill -0 $$pid >/dev/null 2>&1; then \
+			break; \
 		fi; \
-		echo "OK: invalid listen configuration failed clearly"; \
-		echo "=== Test: Runtime start interface PASSED ==="
+		sleep 1; \
+	done; \
+	if kill -0 $$pid >/dev/null 2>&1; then \
+		kill $$pid >/dev/null 2>&1 || true; \
+		wait $$pid || true; \
+		status=124; \
+	else \
+		wait $$pid; \
+		status=$$?; \
+	fi; \
+	set -e; \
+	if [ $$status -eq 0 ] || [ $$status -eq 124 ]; then \
+		echo "FAIL: VARNISH_START with VARNISH_BACKEND_* should fail fast"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	if ! grep -q "VARNISH_START cannot be combined" "$$log_file"; then \
+		echo "FAIL: VARNISH_START with VARNISH_BACKEND_* should fail clearly"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	name="$(CONTAINER_PREFIX)-backend-config-$$(openssl rand -hex 4)"; \
+	docker run -d --name $$name \
+		-e VARNISH_BACKEND_HOST=localhost \
+		-e VARNISH_BACKEND_PORT=9090 \
+		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
+		-p 18082:80 \
+		$(IMAGE) >/dev/null; \
+	echo "Waiting for backend-configured container on 18082..."; \
+	timeout=30; \
+	status="000"; \
+	while [ $$timeout -gt 0 ]; do \
+		status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:18082 || true); \
+		if [ "$$status" != "000" ]; then \
+			echo "OK: backend-configured runtime served HTTP $$status"; \
+			break; \
+		fi; \
+		sleep 1; \
+		timeout=$$((timeout - 1)); \
+	done; \
+	if [ "$$status" = "000" ]; then \
+		echo "FAIL: backend-configured runtime did not expose HTTP on 18082"; \
+		docker logs $$name; \
+		docker rm -f $$name >/dev/null 2>&1 || true; \
+		exit 1; \
+	fi; \
+	docker exec $$name grep -q '.host = "localhost";' /etc/varnish/default.vcl || { \
+		echo "FAIL: expected rendered backend host in embedded VCL"; \
+		docker exec $$name cat /etc/varnish/default.vcl; \
+		exit 1; \
+	}; \
+	docker exec $$name grep -q '.port = "9090";' /etc/varnish/default.vcl || { \
+		echo "FAIL: expected rendered backend port in embedded VCL"; \
+		docker exec $$name cat /etc/varnish/default.vcl; \
+		exit 1; \
+	}; \
+	docker exec $$name grep -q '.url = "/healthz";' /etc/varnish/default.vcl || { \
+		echo "FAIL: expected rendered backend probe path in embedded VCL"; \
+		docker exec $$name cat /etc/varnish/default.vcl; \
+		exit 1; \
+	}; \
+	docker exec $$name /usr/sbin/varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
+	docker rm -f $$name >/dev/null; \
+	echo "OK: invalid listen configuration failed clearly"; \
+	echo "=== Test: Runtime start interface PASSED ==="
 
 test-integration:
 	@echo "=== Test: Integration test ==="
