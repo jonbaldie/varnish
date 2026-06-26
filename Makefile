@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -22,7 +22,7 @@ test-makefile-shell:
 
 test: build test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace
 
-test-e2e-hard: test-hostile-static-cookie test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+test-e2e-hard: test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -368,7 +368,7 @@ test-grace:
 
 test-hostile-static-cookie:
 	@echo "=== Test: Hostile static asset strips cookies and stays cacheable ==="
-	@./test/e2e/run-hostile-scenario.sh static-cookie; exit $$?; \
+	@./test/e2e/run-hostile-scenario.sh static-cookie
 	lockdir="/tmp/varnish-hostile-8081.lock"; \
 	acquired=0; \
 	while [ $$acquired -eq 0 ]; do \
@@ -446,6 +446,18 @@ test-hostile-static-cookie:
 	fi; \
 	echo "OK: Second request stayed cacheable and was a HIT"; \
 	echo "=== Test: Hostile static asset strips cookies and stays cacheable PASSED ==="
+
+test-hostile-static-cookie-canary:
+	@echo "=== Test: Hostile static asset depends on shared cache policy ==="
+	@set -euo pipefail; \
+	log_file=$$(mktemp); \
+	trap 'rm -f "$$log_file"' EXIT; \
+	if HOSTILE_CACHE_POLICY_PATH="$$(pwd)/test/e2e/fixtures/cache-policy-static-cookie-pass.vcl" ./test/e2e/run-hostile-scenario.sh static-cookie >"$$log_file" 2>&1; then \
+		echo "FAIL: hostile static-cookie scenario passed with a mutant shared cache policy"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	echo "OK: hostile static-cookie scenario failed under mutant shared cache policy"
 
 test-hostile-account-cookie-isolation:
 	@echo "=== Test: Hostile account requests with cookies stay isolated per client ==="
