@@ -4,6 +4,7 @@ apt-get -y update
 apt-get -y install varnish=7.*
 
 cp default.vcl /etc/varnish/default.vcl
+cp cache-policy.vcl /etc/varnish/cache-policy.vcl
 sed -i 's/\.host = "web";/.host = "127.0.0.1";/' /etc/varnish/default.vcl
 sed -i 's/\.port = "80";/.port = "8080";/' /etc/varnish/default.vcl
 

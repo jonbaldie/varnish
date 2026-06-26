@@ -30,7 +30,7 @@ test-existence:
 	cid=$$(docker create $(IMAGE)); \
 	tmpdir=$$(mktemp -d); \
 	trap "docker rm -f $$cid >/dev/null 2>&1; rm -rf $$tmpdir" EXIT; \
-	for f in /usr/sbin/varnishd /etc/varnish/default.vcl /start.sh; do \
+	for f in /usr/sbin/varnishd /etc/varnish/default.vcl /etc/varnish/cache-policy.vcl /start.sh; do \
 		if ! docker cp $$cid:$$f $$tmpdir/ >/dev/null 2>&1; then \
 			echo "FAIL: $$f not found"; \
 			exit 1; \
@@ -46,10 +46,12 @@ test-vcl-compile:
 	docker run --rm --name $$name $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
 	echo "OK: Embedded VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
+	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
 	echo "OK: Repo VCL compiles"; \
+	name="$(CONTAINER_PREFIX)-hostile-$$(openssl rand -hex 4)"; \
+	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 -v $$(pwd)/test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null; \
+	echo "OK: Hostile VCL compiles"; \
 	echo "=== Test: VCL compilation PASSED ==="
-
 test-smoke:
 	@echo "=== Test: Smoke test ==="
 	@set -euo pipefail; \
