@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-integration test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -61,12 +61,15 @@ test-vcl-compile:
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
 		$(IMAGE) /bin/bash -lc '/usr/local/bin/render-vcl /tmp/backend.vcl && grep -q "\\.host = \"localhost\";" /tmp/backend.vcl && grep -q "\\.port = \"9090\";" /tmp/backend.vcl && grep -q "\\.url = \"/healthz\";" /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
 	echo "OK: Embedded VCL compiles with configured backend output"; \
+	name="$(CONTAINER_PREFIX)-compose-config-$$(openssl rand -hex 4)"; \
+	docker run --rm --name $$name --add-host web:127.0.0.1 $(IMAGE) /bin/bash -lc 'VARNISH_BACKEND_HOST=web VARNISH_BACKEND_PORT=80 VARNISH_BACKEND_PROBE_PATH=/ /usr/local/bin/render-vcl /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
+	echo "OK: Compose backend adapter VCL compiles"; \
+	name="$(CONTAINER_PREFIX)-hostile-config-$$(openssl rand -hex 4)"; \
+	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 $(IMAGE) /bin/bash -lc 'VARNISH_BACKEND_HOST=hostile-backend VARNISH_BACKEND_PORT=8080 VARNISH_BACKEND_PROBE_PATH=/ready /usr/local/bin/render-vcl /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
+	echo "OK: Hostile backend adapter VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
 	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
 	echo "OK: Repo VCL compiles"; \
-	name="$(CONTAINER_PREFIX)-hostile-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 -v $$(pwd)/test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
-	echo "OK: Hostile VCL compiles"; \
 	echo "=== Test: VCL compilation PASSED ==="
 test-smoke:
 	@echo "=== Test: Smoke test ==="
@@ -258,6 +261,11 @@ test-smoke-runtime-interface:
 	docker rm -f $$name >/dev/null; \
 	echo "OK: invalid listen configuration failed clearly"; \
 	echo "=== Test: Runtime start interface PASSED ==="
+
+test-backend-config-adapter:
+	@echo "=== Test: Backend configuration adapter ==="
+	@./test/e2e/assert-backend-config-adapter.sh
+	@echo "=== Test: Backend configuration adapter PASSED ==="
 
 test-integration:
 	@echo "=== Test: Integration test ==="

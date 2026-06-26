@@ -15,8 +15,11 @@ services:
     image: jonbaldie/varnish
     ports:
       - "8081:80"
+    environment:
+      VARNISH_BACKEND_HOST: hostile-backend
+      VARNISH_BACKEND_PORT: "8080"
+      VARNISH_BACKEND_PROBE_PATH: /ready
     volumes:
-      - ./test/hostile-backend/default.vcl:/etc/varnish/default.vcl:ro
       - ${HOSTILE_CACHE_POLICY_PATH:-./cache-policy.vcl}:/etc/varnish/cache-policy.vcl:ro
     depends_on:
       hostile-backend:

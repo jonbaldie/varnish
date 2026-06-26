@@ -28,7 +28,7 @@ make
 
 Expose Varnish on port 80 and point it at your web server via a `vcl` config file. See the [Varnish docs](https://varnish-cache.org/docs/) for the full picture.
 
-The standalone image embeds `/etc/varnish/default.vcl` and a generated `/etc/varnish/backend.vcl`. Using Docker Compose with mounted volumes means you can edit the config without rebuilding.
+The standalone image embeds `/etc/varnish/default.vcl` and generates `/etc/varnish/backend.vcl`. Docker Compose uses the same backend configuration adapter and mounts only the shared cache policy.
 
 ## Runtime Configuration
 
@@ -41,13 +41,13 @@ The container starts `varnishd` from named runtime values instead of a single ba
 
 For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings.
 
-The embedded standalone backend configuration also has named values:
+Backend configuration also has named values:
 
 - `VARNISH_BACKEND_HOST` defaults to `127.0.0.1`
 - `VARNISH_BACKEND_PORT` defaults to `8080`
 - `VARNISH_BACKEND_PROBE_PATH` defaults to `/`
 
-These apply only to the embedded `/etc/varnish/backend.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
+These render the embedded `/etc/varnish/backend.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
 
 ## Restarting Varnish
 
@@ -66,15 +66,15 @@ With the sample Compose file, restart the Varnish service:
 docker compose restart varnish
 ```
 
-If you changed mounted VCL files, restart the container so `varnishd` starts
+If you changed mounted cache policy or backend environment values, restart the container so `varnishd` starts
 again with the updated configuration. If you changed image files, rebuild first
 with `docker compose up -d --build`.
 
 ## VCL Configuration
 
-`default.vcl` is the compose-facing Varnish config. The standalone image uses the same cache policy with a generated backend include. The config includes:
+The embedded default VCL includes generated backend configuration and the shared cache policy. The repo `default.vcl` remains a standalone sample for custom VCL mounts. The shared cache policy includes:
 
-- **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. The embedded standalone image can override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
+- **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. Override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
 - **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
@@ -82,13 +82,13 @@ with `docker compose up -d --build`.
 - **500 error handling** — sets TTL to 0 and 24h grace for backend 5xx errors.
 - **X-Cache header** — adds `HIT`/`MISS` for cache observability.
 
-The backend address differs between modes: Docker Compose uses `web:80`; standalone uses `127.0.0.1:8080`. The `install.sh` script patches this during the Docker build for standalone use.
+The backend address differs between modes through the adapter: Docker Compose uses `web:80`; standalone defaults to `127.0.0.1:8080`. `render-vcl` generates backend VCL from `VARNISH_BACKEND_HOST`, `VARNISH_BACKEND_PORT`, and `VARNISH_BACKEND_PROBE_PATH`.
 
 ## Docker Compose Example
 
-The repo includes a `docker-compose.yml` and a sample `default.vcl`:
+The repo includes a `docker-compose.yml` sample:
 
-- `varnish` service on port 80, with the VCL mounted from the host.
+- `varnish` service on port 80, using `VARNISH_BACKEND_*` to target the backend.
 - `web` backend running `nginx:alpine`.
 
 ```bash
