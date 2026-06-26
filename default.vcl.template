@@ -1,0 +1,17 @@
+vcl 4.0;
+
+probe backend_probe {
+    .url = "__BACKEND_PROBE_PATH__";
+    .timeout = 2s;
+    .interval = 5s;
+    .window = 5;
+    .threshold = 3;
+}
+
+backend default {
+    .host = "__BACKEND_HOST__";
+    .port = "__BACKEND_PORT__";
+    .probe = backend_probe;
+}
+
+include "/etc/varnish/cache-policy.vcl";

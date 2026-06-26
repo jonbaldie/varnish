@@ -41,11 +41,19 @@ The container starts `varnishd` from named runtime values instead of a single ba
 
 For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings.
 
+The embedded standalone VCL also has named backend configuration values:
+
+- `VARNISH_BACKEND_HOST` defaults to `127.0.0.1`
+- `VARNISH_BACKEND_PORT` defaults to `8080`
+- `VARNISH_BACKEND_PROBE_PATH` defaults to `/`
+
+These apply only to the embedded `/etc/varnish/default.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
+
 ## VCL Configuration
 
 `default.vcl` is the single source of truth for Varnish config. It includes:
 
-- **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3.
+- **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. The embedded standalone image can override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
 - **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
