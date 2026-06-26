@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,16 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-existence test-vcl-compile test-smoke test-smoke-runtime-interface test-integration test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-integration test-security test-purge test-grace
+
+test-restart-docs:
+	@echo "=== Test: Restart documentation ==="
+	@set -euo pipefail; \
+		grep -q "docker restart" README.md; \
+		grep -q "docker compose restart varnish" README.md; \
+		grep -q "sudo service varnish restart" README.md; \
+		echo "OK: README documents container restart workflow"; \
+		echo "=== Test: Restart documentation PASSED ==="
 
 test-e2e-hard: test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
 
@@ -86,6 +95,37 @@ test-smoke:
 		docker exec $$name varnishadm status >/dev/null; \
 		echo "OK: varnishadm status responded"; \
 		echo "=== Test: Smoke test PASSED ==="
+
+test-container-restart:
+	@echo "=== Test: Container restart ==="
+	@set -euo pipefail; \
+		name="$(CONTAINER_PREFIX)-restart-$$(openssl rand -hex 4)"; \
+		host_port=18083; \
+		docker run -d --name $$name -p $$host_port:80 $(IMAGE) >/dev/null; \
+		trap "docker rm -f $$name >/dev/null 2>&1" EXIT; \
+		for phase in initial restarted; do \
+			if [ "$$phase" = "restarted" ]; then \
+				docker restart $$name >/dev/null; \
+			fi; \
+			echo "Waiting for $$phase varnishd HTTP on $$host_port..."; \
+			timeout=30; \
+			status="000"; \
+			while [ $$timeout -gt 0 ]; do \
+				status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://localhost:$$host_port || true); \
+				if [ "$$status" != "000" ]; then \
+					echo "OK: $$phase container served HTTP $$status"; \
+					break; \
+				fi; \
+				sleep 1; \
+				timeout=$$((timeout - 1)); \
+			done; \
+			if [ "$$status" = "000" ]; then \
+				echo "FAIL: $$phase container did not expose HTTP on $$host_port"; \
+				docker logs $$name; \
+				exit 1; \
+			fi; \
+		done; \
+		echo "=== Test: Container restart PASSED ==="
 
 test-smoke-runtime-interface:
 	@echo "=== Test: Runtime start interface ==="
