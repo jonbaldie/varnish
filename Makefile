@@ -457,6 +457,11 @@ test-hostile-static-cookie-canary:
 		cat "$$log_file"; \
 		exit 1; \
 	fi; \
+	if ! grep -Eq "first static asset request|second static asset request" "$$log_file"; then \
+		echo "FAIL: hostile static-cookie canary should fail with semantic cache-domain assertion"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
 	echo "OK: hostile static-cookie scenario failed under mutant shared cache policy"
 
 test-hostile-account-cookie-isolation:
