@@ -99,18 +99,34 @@ assert_cache_state() {
 }
 
 assert_header_contains() {
-    local name="$1"
-    local header_name="$2"
-    local expected_fragment="$3"
-    local context="$4"
+  local name="$1"
+  local header_name="$2"
+  local expected_fragment="$3"
+  local context="$4"
     local actual_value
     actual_value="$(response_header_value "$name" "$header_name" || true)"
 
     if [[ "$actual_value" != *"$expected_fragment"* ]]; then
         fail_response_assertion \
             "expected ${context} header ${header_name} contain '${expected_fragment}', got '${actual_value:-missing}'" \
-            "$name"
-    fi
+    "$name"
+  fi
+}
+
+assert_header_missing_or_not_contains() {
+  local name="$1"
+  local header_name="$2"
+  local unexpected_fragment="$3"
+  local context="$4"
+  local actual_value
+
+  actual_value="$(response_header_value "$name" "$header_name" || true)"
+
+  if [[ "$actual_value" == *"$unexpected_fragment"* ]]; then
+    fail_response_assertion \
+      "expected ${context} header ${header_name} not contain '${unexpected_fragment}', got '${actual_value}'" \
+      "$name"
+  fi
 }
 
 assert_body_field_equals() {
@@ -153,6 +169,21 @@ assert_same_origin_request_id() {
     if [ "$actual_request_id" != "$expected_request_id" ]; then
         fail_response_assertion \
             "expected ${context} reuse origin request id ${expected_request_id}, got ${actual_request_id}" \
-            "$name"
-    fi
+    "$name"
+  fi
+}
+
+assert_different_origin_request_id() {
+  local name="$1"
+  local previous_request_id="$2"
+  local context="$3"
+  local actual_request_id
+
+  actual_request_id="$(assert_origin_request_id_present "$name" "$context")"
+
+  if [ "$actual_request_id" = "$previous_request_id" ]; then
+    fail_response_assertion \
+      "expected ${context} hit origin with a new request id, got reused id ${actual_request_id}" \
+      "$name"
+  fi
 }
