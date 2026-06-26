@@ -30,7 +30,7 @@ test-existence:
 	cid=$$(docker create $(IMAGE)); \
 	tmpdir=$$(mktemp -d); \
 	trap "docker rm -f $$cid >/dev/null 2>&1; rm -rf $$tmpdir" EXIT; \
-	for f in /usr/sbin/varnishd /etc/varnish/default.vcl /etc/varnish/cache-policy.vcl /start.sh; do \
+	for f in /usr/sbin/varnishd /etc/varnish/default.vcl /etc/varnish/backend.vcl /etc/varnish/cache-policy.vcl /start.sh; do \
 		if ! docker cp $$cid:$$f $$tmpdir/ >/dev/null 2>&1; then \
 			echo "FAIL: $$f not found"; \
 			exit 1; \
@@ -50,7 +50,7 @@ test-vcl-compile:
 		-e VARNISH_BACKEND_HOST=localhost \
 		-e VARNISH_BACKEND_PORT=9090 \
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
-		$(IMAGE) /bin/bash -lc '/usr/local/bin/render-vcl /etc/varnish/default.vcl.template /tmp/configured.vcl && grep -q "\\.host = \"localhost\";" /tmp/configured.vcl && grep -q "\\.port = \"9090\";" /tmp/configured.vcl && grep -q "\\.url = \"/healthz\";" /tmp/configured.vcl && /usr/sbin/varnishd -C -f /tmp/configured.vcl >/dev/null 2>&1'; \
+		$(IMAGE) /bin/bash -lc '/usr/local/bin/render-vcl /tmp/backend.vcl && grep -q "\\.host = \"localhost\";" /tmp/backend.vcl && grep -q "\\.port = \"9090\";" /tmp/backend.vcl && grep -q "\\.url = \"/healthz\";" /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
 	echo "OK: Embedded VCL compiles with configured backend output"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
 	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
@@ -199,19 +199,19 @@ test-smoke-runtime-interface:
 		docker rm -f $$name >/dev/null 2>&1 || true; \
 		exit 1; \
 	fi; \
-	docker exec $$name grep -q '.host = "localhost";' /etc/varnish/default.vcl || { \
-		echo "FAIL: expected rendered backend host in embedded VCL"; \
-		docker exec $$name cat /etc/varnish/default.vcl; \
+	docker exec $$name grep -q '.host = "localhost";' /etc/varnish/backend.vcl || { \
+		echo "FAIL: expected rendered backend host in backend VCL"; \
+		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name grep -q '.port = "9090";' /etc/varnish/default.vcl || { \
-		echo "FAIL: expected rendered backend port in embedded VCL"; \
-		docker exec $$name cat /etc/varnish/default.vcl; \
+	docker exec $$name grep -q '.port = "9090";' /etc/varnish/backend.vcl || { \
+		echo "FAIL: expected rendered backend port in backend VCL"; \
+		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name grep -q '.url = "/healthz";' /etc/varnish/default.vcl || { \
-		echo "FAIL: expected rendered backend probe path in embedded VCL"; \
-		docker exec $$name cat /etc/varnish/default.vcl; \
+	docker exec $$name grep -q '.url = "/healthz";' /etc/varnish/backend.vcl || { \
+		echo "FAIL: expected rendered backend probe path in backend VCL"; \
+		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
 	docker exec $$name /usr/sbin/varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
