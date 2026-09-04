@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -539,3 +539,16 @@ test-perf:
 	echo "The key benefit is reduced backend load and consistent performance under high concurrency."; \
 	echo ""; \
 	echo "=== Test: Performance and caching effectiveness PASSED ==="
+
+test-campaign: build
+	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="
+	@set -euo pipefail; \
+	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	docker run --rm \
+		--cpus 2 \
+		--memory 2g \
+		--memory-swap 2g \
+		--pids-limit 1000 \
+		-v "$$(pwd)/test/campaign:/campaign" \
+		-v "$$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro" \
+		varnish-campaign:latest

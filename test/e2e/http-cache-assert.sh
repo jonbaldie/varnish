@@ -92,8 +92,10 @@ assert_cache_state() {
     actual_state="$(response_header_value "$name" "X-Cache" || true)"
 
     if [[ "$actual_state" != *"$expected_state"* ]]; then
+        local lower_expected
+        lower_expected="$(printf '%s' "$expected_state" | tr '[:upper:]' '[:lower:]')"
         fail_response_assertion \
-            "expected ${context} cache ${expected_state,,}, got '${actual_state:-missing}'" \
+            "expected ${context} cache ${lower_expected}, got '${actual_state:-missing}'" \
             "$name"
     fi
 }

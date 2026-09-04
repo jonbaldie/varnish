@@ -14,20 +14,24 @@ sub vcl_recv {
         return (purge);
     }
 
+    unset req.http.X-Normalized-AE;
+
     if (req.http.Accept-Encoding) {
-        if (req.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
+        if (req.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
             unset req.http.Accept-Encoding;
-        } elsif (req.http.Accept-Encoding ~ "gzip") {
+        } elsif (req.http.Accept-Encoding ~ "gzip" && req.http.Accept-Encoding !~ "gzip;[ ]*q=0(\.0*)?([,;]|$)") {
             set req.http.Accept-Encoding = "gzip";
-        } elsif (req.http.Accept-Encoding ~ "deflate") {
+            set req.http.X-Normalized-AE = "gzip";
+        } elsif (req.http.Accept-Encoding ~ "deflate" && req.http.Accept-Encoding !~ "deflate;[ ]*q=0(\.0*)?([,;]|$)") {
             set req.http.Accept-Encoding = "deflate";
+            set req.http.X-Normalized-AE = "deflate";
         } else {
             unset req.http.Accept-Encoding;
         }
     }
 
     # Remove cookies for static assets to improve cache hit rate.
-    if (req.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
+    if (req.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
         unset req.http.Cookie;
     }
 
@@ -42,8 +46,29 @@ sub vcl_recv {
     return (hash);
 }
 
+sub vcl_backend_fetch {
+    if (bereq.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
+        unset bereq.http.Accept-Encoding;
+        unset bereq.http.X-Normalized-AE;
+    } elsif (bereq.http.X-Normalized-AE) {
+        set bereq.http.Accept-Encoding = bereq.http.X-Normalized-AE;
+        unset bereq.http.X-Normalized-AE;
+    } else {
+        unset bereq.http.Accept-Encoding;
+    }
+}
+
 sub vcl_backend_response {
-    if (bereq.url ~ "\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)$") {
+    if (beresp.http.Set-Cookie ||
+        beresp.http.Surrogate-Control ~ "(?i)no-store" ||
+        (!beresp.http.Surrogate-Control &&
+          beresp.http.Cache-Control ~ "(?i:no-cache|no-store|private)")) {
+        set beresp.uncacheable = true;
+        set beresp.ttl = 120s;
+        return (deliver);
+    }
+
+    if (bereq.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
         set beresp.ttl = 1d;
         set beresp.grace = 7d;
     } else {

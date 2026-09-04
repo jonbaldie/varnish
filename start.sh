@@ -34,10 +34,16 @@ if [ -n "${backend_host}${backend_port}${backend_probe_path}" ]; then
 		/usr/local/bin/render-vcl /etc/varnish/backend.vcl
 fi
 
-case "${listen}" in
-	*:* ) ;;
-	* )
-		fail "Invalid VARNISH_LISTEN '${listen}'; expected host:port"
+listen_host="${listen%:*}"
+listen_port="${listen##*:}"
+
+if [ -z "${listen_host}" ] || [ -z "${listen_port}" ]; then
+	fail "Invalid VARNISH_LISTEN '${listen}'; expected host:port"
+fi
+
+case "${listen_port}" in
+	''|*[!0-9]*)
+		fail "Invalid VARNISH_LISTEN '${listen}'; expected numeric port"
 		;;
 esac
 
@@ -45,12 +51,12 @@ if [ ! -f "${vcl_path}" ]; then
 	fail "Invalid VARNISH_VCL '${vcl_path}'; file does not exist"
 fi
 
-case "${storage}" in
-	*,* ) ;;
-	* )
-		fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
-		;;
-esac
+storage_backend="${storage%%,*}"
+storage_size="${storage#*,}"
+
+if [ -z "${storage_backend}" ] || [ -z "${storage_size}" ]; then
+	fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
+fi
 
 args=(
 	/usr/sbin/varnishd
