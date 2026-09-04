@@ -8,3 +8,8 @@
 
 # Serena
 .serena/
+
+# Test artifacts
+test/campaign/report.json
+__pycache__/
+*.pyc

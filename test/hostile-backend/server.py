@@ -56,31 +56,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         cookie_header = self.headers.get("Cookie")
+        clean_path = self.path.split("?")[0].lower()
 
         # Health check endpoints for container readiness probes.
         # "/" is used by the main VCL backend probe; "/ready" by the hostile
         # compose healthcheck. Both must return 200 so Varnish marks the
         # backend as healthy before any test assertions run.
-        if self.path in ("/", "/ready"):
+        if clean_path in ("/", "/ready"):
             self.respond(200, "ready=ok\n")
             return
 
-        # Proves 5xx backend responses are not served from cache.
-        # Test assertion: two consecutive requests must both produce
-        # X-Cache: MISS and distinct X-Backend-Request-Id values,
-        # proving Varnish hit origin each time rather than caching the error.
-        if self.path == "/error":
+        if clean_path == "/error":
             body = "route=error\n"
             self.respond(500, body)
             return
 
-        # Proves grace period serves stale content when backend is down.
-        # Sets a short TTL (10s) so the test can wait past expiry without
-        # waiting for the 120s Varnish default TTL.
-        # Test assertion: after TTL expires AND backend is sick, a request
-        # must still return 200 because VCL sets beresp.grace = 1h for
-        # non-static content.
-        if self.path == "/short-cache":
+        if clean_path == "/short-cache":
             body = "route=short-cache\n"
             self.respond(
                 200,
@@ -89,11 +80,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        # Proves Varnish strips cookies from cacheable static assets.
-        # Test assertion: request with Cookie should produce response body
-        # containing "cookie=none", proving the Cookie header was removed
-        # by Varnish before reaching origin.
-        if self.path == "/static/app.css":
+        if clean_path == "/static/app.css":
             cookie_state = "present" if cookie_header else "none"
             body = f"asset=app.css\ncookie={cookie_state}\n"
             self.respond(
@@ -104,27 +91,28 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        # Proves Varnish passes (does not cache) cookie-bearing dynamic requests
-        # and does not share responses across clients.
-        # Test assertion: two requests from different clients should produce
-        # different X-Backend-Request-Id values, proving each hit origin separately.
-        if self.path == "/account":
+        if clean_path == "/account":
             client = parse_client_identity(cookie_header)
             body = f"route=account\nclient={client}\n"
             self.respond(200, body)
             return
 
-        # Proves Varnish does not cache responses with Set-Cookie headers
-        # and does not leak Set-Cookie values across client boundaries.
-        # Test assertion: each client request should produce unique
-        # X-Backend-Request-Id and client-specific Set-Cookie value.
-        if self.path == "/set-cookie":
+        if clean_path == "/set-cookie":
             client = parse_client_identity(cookie_header)
             body = f"route=set-cookie\nclient={client}\n"
             self.respond(
                 200,
                 body,
                 extra_headers={"Set-Cookie": f"session={client}; Path=/"},
+            )
+            return
+
+        if clean_path == "/private":
+            body = "route=private\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Cache-Control": "private, no-store"},
             )
             return
 

@@ -28,3 +28,14 @@ assert_header_contains set-cookie-bob Set-Cookie "session=bob; Path=/" "bob set-
 assert_header_missing_or_not_contains set-cookie-bob Set-Cookie "session=alice; Path=/" "bob set-cookie request"
 assert_different_origin_request_id set-cookie-bob "$alice_request_id" "bob set-cookie request"
 echo "OK: Bob response stayed uncached and isolated from alice's Set-Cookie response"
+
+echo "Requesting /set-cookie as first unauthenticated visitor..."
+http_request set-cookie-anon1 "$url"
+assert_cache_state set-cookie-anon1 MISS "anon 1 set-cookie request"
+anon1_request_id="$(assert_origin_request_id_present set-cookie-anon1 "anon 1 set-cookie request")"
+
+echo "Requesting /set-cookie as second unauthenticated visitor..."
+http_request set-cookie-anon2 "$url"
+assert_cache_state set-cookie-anon2 MISS "anon 2 set-cookie request"
+assert_different_origin_request_id set-cookie-anon2 "$anon1_request_id" "anon 2 set-cookie request"
+echo "OK: Unauthenticated requests with origin Set-Cookie stayed uncached"

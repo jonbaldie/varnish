@@ -11,6 +11,13 @@ escape_vcl_string() {
 	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
 }
 
+case "${backend_host}" in
+	*[$'\r\n']*|*[[:space:]]*|*[\'\"\;\\\{\}]*)
+		echo "ERROR: Invalid VARNISH_BACKEND_HOST '${backend_host}'; contains invalid characters" >&2
+		exit 1
+		;;
+esac
+
 case "${backend_port}" in
 	''|*[!0-9]*)
 		echo "ERROR: Invalid VARNISH_BACKEND_PORT '${backend_port}'; expected digits" >&2
@@ -18,10 +25,22 @@ case "${backend_port}" in
 		;;
 esac
 
+if [ "${backend_port}" -lt 1 ] || [ "${backend_port}" -gt 65535 ]; then
+	echo "ERROR: Invalid VARNISH_BACKEND_PORT '${backend_port}'; expected port between 1 and 65535" >&2
+	exit 1
+fi
+
 case "${backend_probe_path}" in
 	/*) ;;
 	*)
 		echo "ERROR: Invalid VARNISH_BACKEND_PROBE_PATH '${backend_probe_path}'; expected absolute path" >&2
+		exit 1
+		;;
+esac
+
+case "${backend_probe_path}" in
+	*[$'\r\n']*|*[\'\"\;\\\{\}]*)
+		echo "ERROR: Invalid VARNISH_BACKEND_PROBE_PATH '${backend_probe_path}'; contains invalid characters" >&2
 		exit 1
 		;;
 esac
