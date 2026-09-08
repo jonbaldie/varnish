@@ -13,7 +13,9 @@ The fixture provides three critical test endpoints:
 Every response includes X-Backend-Request-Id to prove cache hits vs origin hits.
 """
 
+import email.utils
 import os
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import count
 
@@ -99,6 +101,47 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 body,
                 extra_headers={"Cache-Control": "public, max-age=10"},
+            )
+            return
+
+        # Zero-freshness static assets: the origin allows storage (no
+        # no-store/no-cache/private) but grants zero freshness. Builtin
+        # Varnish treats beresp.ttl <= 0s as hit-for-miss; the shared cache
+        # policy must not overwrite that with a static-extension TTL.
+        if clean_path == "/static/zero-maxage.css":
+            body = "asset=zero-maxage.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Cache-Control": "max-age=0"},
+            )
+            return
+
+        if clean_path == "/static/zero-smaxage.css":
+            body = "asset=zero-smaxage.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Cache-Control": "s-maxage=0"},
+            )
+            return
+
+        if clean_path == "/static/past-expires.css":
+            body = "asset=past-expires.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    # An hour ago. Never the epoch (00:00:00 UTC 1 Jan 1970):
+                    # Varnish's RFC2616_Ttl treats a parsed Expires of 0 as
+                    # an absent header and falls back to default_ttl.
+                    "Expires": email.utils.formatdate(
+                        time.time() - 3600, usegmt=True
+                    ),
+                },
             )
             return
 

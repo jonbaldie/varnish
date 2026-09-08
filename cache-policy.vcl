@@ -99,8 +99,18 @@ sub vcl_backend_response {
     }
 
     if (bereq.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
-        set beresp.ttl = 1d;
-        set beresp.grace = 7d;
+        # Apply the static TTL only when the origin granted positive
+        # freshness. Zero freshness (max-age=0, s-maxage=0, or an Expires
+        # date in the past) must stay hit-for-miss, as builtin
+        # vcl_backend_response would do for beresp.ttl <= 0s (RFC 9111 §5.2).
+        if (beresp.ttl > 0s) {
+            set beresp.ttl = 1d;
+            set beresp.grace = 7d;
+        } else {
+            set beresp.uncacheable = true;
+            set beresp.ttl = 120s;
+            return (deliver);
+        }
     } else {
         set beresp.grace = 1h;
     }
