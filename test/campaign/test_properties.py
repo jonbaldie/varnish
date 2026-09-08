@@ -613,6 +613,100 @@ def test_vary_star_properties(varnish_host, varnish_port, backend):
         ))
 
 
+# -------------------------------------------------------------
+# Property 9: Authorization Header RFC 9111 §3.5 Compliance
+# -------------------------------------------------------------
+def test_authorization_properties(varnish_host, varnish_port, backend):
+    print("\n--- [CGPT Property 9] RFC 9111 §3.5 Authorization Header Caching ---")
+
+    # Test 9.1: Request with Authorization header must never be cached or leaked across users
+    path_auth = f"/api/user/profile-{random.randint(10000, 99999)}"
+    purge_url(varnish_host, varnish_port, path_auth)
+
+    backend.set_route(
+        path_auth,
+        status=200,
+        headers={"Content-Type": "application/json"},
+        body='{"user": "dynamic"}'
+    )
+
+    r_alice = raw_http_request(varnish_host, varnish_port, "GET", path_auth, headers={"Authorization": "Bearer alice-token"})
+    r_bob = raw_http_request(varnish_host, varnish_port, "GET", path_auth, headers={"Authorization": "Bearer bob-token"})
+
+    if "HIT" in r_alice["x_cache"]:
+        print("[CRITICAL RFC VIOLATION] First authenticated request served as HIT!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance / Security",
+            name="Authenticated request served as HIT",
+            description="Request with Authorization header was served as X-Cache: HIT",
+            reproducer=f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}",
+            severity="CRITICAL"
+        ))
+
+    if "HIT" in r_bob["x_cache"]:
+        print("[CRITICAL SECURITY VULNERABILITY] Authenticated response leaked to another user via cache HIT!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance / Security",
+            name="Authenticated response leaked across users",
+            description=(
+                "When a user accesses an endpoint with an Authorization header, "
+                "subsequent requests by another user with different credentials received X-Cache: HIT."
+            ),
+            reproducer=(
+                f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}\n"
+                f"curl -H 'Authorization: Bearer bob-token' http://{varnish_host}:{varnish_port}{path_auth}"
+            ),
+            severity="CRITICAL"
+        ))
+
+    # Test 9.2: Authenticated response must not leak to anonymous user
+    r_anon = raw_http_request(varnish_host, varnish_port, "GET", path_auth)
+    if "HIT" in r_anon["x_cache"]:
+        print("[CRITICAL SECURITY VULNERABILITY] Authenticated response leaked to anonymous user!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance / Security",
+            name="Authenticated response leaked to anonymous user",
+            description="Anonymous request without Authorization received cached authenticated response (X-Cache: HIT)",
+            reproducer=f"curl http://{varnish_host}:{varnish_port}{path_auth}",
+            severity="CRITICAL"
+        ))
+
+    # Test 9.3: Anonymous request caches, but authenticated request bypasses cached response
+    path_cacheable = f"/api/public-content-{random.randint(10000, 99999)}"
+    purge_url(varnish_host, varnish_port, path_cacheable)
+
+    backend.set_route(
+        path_cacheable,
+        status=200,
+        headers={"Content-Type": "text/plain", "Cache-Control": "public, max-age=3600"},
+        body="public-data"
+    )
+
+    r_anon1 = raw_http_request(varnish_host, varnish_port, "GET", path_cacheable)
+    r_anon2 = raw_http_request(varnish_host, varnish_port, "GET", path_cacheable)
+
+    if "HIT" not in r_anon2["x_cache"]:
+        print("[REGRESSION] Unauthenticated request to public content failed to cache!")
+        findings.append(Finding(
+            category="Cache Functionality",
+            name="Unauthenticated public content not cached",
+            description="Second request without Authorization failed to receive X-Cache: HIT",
+            reproducer=f"curl http://{varnish_host}:{varnish_port}{path_cacheable}",
+            severity="HIGH"
+        ))
+
+    r_auth_bypass = raw_http_request(varnish_host, varnish_port, "GET", path_cacheable, headers={"Authorization": "Bearer token123"})
+    if "HIT" in r_auth_bypass["x_cache"]:
+        print("[CRITICAL RFC VIOLATION] Authenticated request served cached anonymous response!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance / Security",
+            name="Authenticated request received cached anonymous response",
+            description="Request with Authorization header received X-Cache: HIT instead of bypassing cache to origin",
+            reproducer=f"curl -H 'Authorization: Bearer token123' http://{varnish_host}:{varnish_port}{path_cacheable}",
+            severity="CRITICAL"
+        ))
+
+
 def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     print("==========================================================")
     print("PHASE 2: Coverage-Guided Property-Based Testing (CGPT)")
@@ -625,6 +719,7 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     test_5xx_and_grace_properties(varnish_host, varnish_port, backend)
     test_host_header_properties(varnish_host, varnish_port, backend)
     test_vary_star_properties(varnish_host, varnish_port, backend)
+    test_authorization_properties(varnish_host, varnish_port, backend)
     print(f"\nPhase 2 Complete. Findings: {len(findings)}")
     return [f.to_dict() for f in findings]
 

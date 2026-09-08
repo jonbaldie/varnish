@@ -45,6 +45,28 @@ def parse_client_identity(cookie_header: str | None) -> str:
     return "anonymous"
 
 
+def parse_auth_identity(auth_header: str | None) -> str:
+    """Extract client identity from Authorization header for test scenario tracking.
+
+    Parses Bearer, Basic, or custom tokens to enable E2E tests to prove
+    that authenticated responses are never cached or leaked across clients.
+
+    Args:
+        auth_header: Raw Authorization header value, may be None
+
+    Returns:
+        Client identity string or "anonymous"
+    """
+    if not auth_header:
+        return "anonymous"
+
+    parts = auth_header.strip().split()
+    if len(parts) >= 2:
+        return parts[1]
+
+    return auth_header.strip()
+
+
 class Handler(BaseHTTPRequestHandler):
     """HTTP request handler implementing the hostile backend test contract.
     
@@ -94,6 +116,12 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path == "/account":
             client = parse_client_identity(cookie_header)
             body = f"route=account\nclient={client}\n"
+            self.respond(200, body)
+            return
+
+        if clean_path == "/auth":
+            client = parse_auth_identity(self.headers.get("Authorization"))
+            body = f"route=auth\nclient={client}\n"
             self.respond(200, body)
             return
 
@@ -162,7 +190,21 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if clean_path == "/static/auth.css":
+            client = parse_auth_identity(self.headers.get("Authorization"))
+            body = f"asset=auth.css\nclient={client}\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Cache-Control": "public, max-age=86400"},
+            )
+            return
+
         self.respond(404, "route=not-found\n")
+
+    def do_HEAD(self) -> None:
+        self.do_GET()
 
     def do_POST(self) -> None:
         """Handle POST requests identically to GET.
@@ -217,7 +259,8 @@ class Handler(BaseHTTPRequestHandler):
         for name, value in (extra_headers or {}).items():
             self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(payload)
+        if self.command != "HEAD":
+            self.wfile.write(payload)
 
 
 def main() -> None:
