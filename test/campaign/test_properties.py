@@ -495,6 +495,39 @@ def test_host_header_properties(varnish_host, varnish_port, backend):
             severity="HIGH"
         ))
 
+    # HTTP/1.1 with empty Host header
+    code_empty, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n")
+    if code_empty != 400:
+        findings.append(Finding(
+            category="HTTP Compliance",
+            name="HTTP/1.1 request with empty Host header accepted",
+            description=f"HTTP/1.1 request with empty Host header returned {code_empty} instead of 400 Bad Request",
+            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+            severity="HIGH"
+        ))
+
+    # HTTP/1.1 with whitespace-only Host header
+    code_ws, _ = send_raw(b"GET / HTTP/1.1\r\nHost:   \r\nConnection: close\r\n\r\n")
+    if code_ws != 400:
+        findings.append(Finding(
+            category="HTTP Compliance",
+            name="HTTP/1.1 request with whitespace-only Host header accepted",
+            description=f"HTTP/1.1 request with whitespace-only Host header returned {code_ws} instead of 400 Bad Request",
+            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost:   \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+            severity="HIGH"
+        ))
+
+    # HTTP/1.1 with tab whitespace Host header
+    code_tab, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \t\r\nConnection: close\r\n\r\n")
+    if code_tab != 400:
+        findings.append(Finding(
+            category="HTTP Compliance",
+            name="HTTP/1.1 request with tab whitespace Host header accepted",
+            description=f"HTTP/1.1 request with tab whitespace Host header returned {code_tab} instead of 400 Bad Request",
+            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\t\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+            severity="HIGH"
+        ))
+
     # HTTP/1.0 without Host header should be accepted (200)
     code_10, _ = send_raw(b"GET / HTTP/1.0\r\nConnection: close\r\n\r\n")
     if code_10 != 200:

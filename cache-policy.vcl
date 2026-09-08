@@ -7,15 +7,15 @@ acl purge {
 }
 
 sub vcl_recv {
-    if (req.http.host ~ "[[:upper:]]") {
-        set req.http.host = req.http.host.lower();
-    }
-
-    if (!req.http.host &&
+    if ((!req.http.host || req.http.host ~ "^[[:space:]]*$") &&
         req.esi_level == 0 &&
         req.proto == "HTTP/1.1") {
         # In HTTP/1.1, Host is required (RFC 9112 §7.1).
         return (synth(400));
+    }
+
+    if (req.http.host ~ "[[:upper:]]") {
+        set req.http.host = req.http.host.lower();
     }
 
     if (req.method == "PURGE") {
