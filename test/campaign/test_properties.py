@@ -350,6 +350,53 @@ def test_http_methods_properties(varnish_host, varnish_port, backend):
         else:
             print(f"[+] {method} correctly bypassed cache (X-Cache: {r_mut['x_cache']})")
 
+    # Mutating requests to static extension URLs must preserve Cookie headers and bypass cache
+    static_paths = [
+        "/upload/avatar.png",
+        "/media/document.pdf",
+        "/styles/custom.css",
+        "/scripts/bundle.js",
+    ]
+    for spath in static_paths:
+        purge_url(varnish_host, varnish_port, spath)
+        backend.set_route(spath, status=200, body=f"static content for {spath}")
+        for method in ["POST", "PUT", "DELETE", "PATCH"]:
+            cookie_val = f"session={method.lower()}_user_token"
+            r_mut = raw_http_request(varnish_host, varnish_port, method, spath, headers={"Cookie": cookie_val}, body=f"body for {method}")
+            if "HIT" in r_mut["x_cache"]:
+                findings.append(Finding(
+                    category="HTTP Method Safety",
+                    name=f"{method} to static URL served from cache",
+                    description=f"{method} request to static asset {spath} was served from cache instead of passing to origin",
+                    reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
+                    severity="CRITICAL"
+                ))
+            backend_reqs = [h for h in backend.get_history() if h["path"] == spath and h["method"] == method]
+            if not backend_reqs:
+                findings.append(Finding(
+                    category="HTTP Method Safety",
+                    name=f"{method} to static URL did not reach origin",
+                    description=f"{method} request to {spath} was not recorded at backend",
+                    reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{spath}",
+                    severity="HIGH"
+                ))
+            elif backend_reqs[-1]["headers"].get("Cookie") != cookie_val:
+                actual_cookie = backend_reqs[-1]["headers"].get("Cookie")
+                print(f"[CRITICAL BUG] {method} to static URL '{spath}' stripped Cookie! (got {actual_cookie})")
+                findings.append(Finding(
+                    category="Cookie Stripping / Mutating Methods",
+                    name=f"Mutating {method} to static asset extension stripped Cookie header",
+                    description=(
+                        f"When sending {method} request to static asset '{spath}' with Cookie header, "
+                        f"the cookie was stripped before reaching the origin backend (received: {actual_cookie}). "
+                        "Mutating requests to static extensions must preserve Cookie headers for authenticated operations."
+                    ),
+                    reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
+                    severity="CRITICAL"
+                ))
+            else:
+                print(f"[+] {method} to static URL '{spath}' preserved Cookie intact at origin")
+
 
 # -------------------------------------------------------------
 # Property 5: PURGE ACL & IP Spoofing

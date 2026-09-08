@@ -27,3 +27,13 @@ assert_cache_state post-request MISS "POST request"
 assert_body_field_equals post-request asset app.css "POST request"
 assert_different_origin_request_id post-request "$first_request_id" "POST request"
 echo "OK: POST bypassed cached GET object and reached origin"
+
+echo "Sending mutating requests with Cookie to static asset URL..."
+for method in POST PUT DELETE PATCH; do
+    step_name="mutating-${method}-cookie"
+    http_request "$step_name" "$url" -X "$method" -H 'Cookie: client=alice'
+    assert_cache_state "$step_name" MISS "${method} request with Cookie"
+    assert_body_field_equals "$step_name" asset app.css "${method} request with Cookie"
+    assert_body_field_equals "$step_name" cookie present "${method} request with Cookie"
+    echo "OK: ${method} to static asset preserved Cookie header at origin"
+done
