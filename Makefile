@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -31,7 +31,7 @@ test-restart-docs:
 		echo "OK: README documents container restart workflow"; \
 		echo "=== Test: Restart documentation PASSED ==="
 
-test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary
+test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -584,6 +584,27 @@ test-hostile-authorization-canary:
 		exit 1; \
 	fi; \
 	echo "OK: hostile authorization scenario failed under mutant shared cache policy"
+
+test-hostile-zero-ttl:
+	@echo "=== Test: Hostile backend zero-freshness static assets not cached as fresh (RFC 9111) ==="
+	@./test/e2e/run-hostile-scenario.sh zero-ttl
+
+test-hostile-zero-ttl-canary:
+	@echo "=== Test: Hostile zero-freshness static TTL depends on shared cache policy ==="
+	@set -euo pipefail; \
+	log_file=$$(mktemp); \
+	trap 'rm -f "$$log_file"' EXIT; \
+	if HOSTILE_CACHE_POLICY_PATH="$$(pwd)/test/e2e/fixtures/cache-policy-zero-ttl-cached.vcl" ./test/e2e/run-hostile-scenario.sh zero-ttl >"$$log_file" 2>&1; then \
+		echo "FAIL: hostile zero-ttl scenario passed with a mutant shared cache policy"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	if ! grep -Eq "second request" "$$log_file"; then \
+		echo "FAIL: hostile zero-ttl canary should fail with semantic cache-domain assertion"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	echo "OK: hostile zero-ttl scenario failed under mutant shared cache policy"
 
 test-perf:
 	@echo "=== Test: Performance and caching effectiveness ==="

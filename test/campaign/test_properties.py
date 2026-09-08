@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Phase 2: Coverage-guided Property-based Testing (CGPT) & Metamorphic Testing."""
 
+import email.utils
 import http.client
 import json
 import os
@@ -707,6 +708,66 @@ def test_authorization_properties(varnish_host, varnish_port, backend):
         ))
 
 
+# -------------------------------------------------------------
+# Property 10: Zero-Freshness Static Assets (RFC 9111 §5.2/§5.3)
+# -------------------------------------------------------------
+def test_zero_freshness_static_properties(varnish_host, varnish_port, backend):
+    print("\n--- [CGPT Property 10] Zero-Freshness Static Assets Stay Hit-For-Miss ---")
+
+    # Static assets the origin allows storing (no no-store/no-cache/private)
+    # but grants zero freshness must never be served as a fresh HIT. The
+    # static-extension TTL override must not clobber beresp.ttl <= 0s.
+    zero_freshness_headers = [
+        ("max-age-zero", {"Content-Type": "text/css", "Cache-Control": "max-age=0"}),
+        ("s-maxage-zero", {"Content-Type": "text/css", "Cache-Control": "s-maxage=0"}),
+        ("past-expires", {
+            "Content-Type": "text/css",
+            "Expires": email.utils.formatdate(time.time() - 3600, usegmt=True),
+        }),
+    ]
+
+    for slug, headers in zero_freshness_headers:
+        path = f"/zero-fresh-{slug}-{random.randint(10000, 99999)}.css"
+        purge_url(varnish_host, varnish_port, path)
+
+        backend.set_route(path, status=200, headers=headers, body="static data")
+
+        r1 = raw_http_request(varnish_host, varnish_port, "GET", path)
+        r2 = raw_http_request(varnish_host, varnish_port, "GET", path)
+
+        if "HIT" in r1["x_cache"]:
+            print(f"[CRITICAL RFC VIOLATION] First request to zero-freshness static asset {path} served as HIT!")
+            findings.append(Finding(
+                category="RFC 9111 Compliance",
+                name="Zero-freshness static asset served as fresh HIT",
+                description=(
+                    f"Static asset with origin freshness zero ({slug}) was served as "
+                    "X-Cache: HIT on the first request"
+                ),
+                reproducer=f"curl http://{varnish_host}:{varnish_port}{path}",
+                severity="CRITICAL"
+            ))
+        elif "HIT" in r2["x_cache"]:
+            print(f"[CRITICAL RFC VIOLATION] Zero-freshness static asset {path} cached and served as HIT!")
+            findings.append(Finding(
+                category="RFC 9111 Compliance",
+                name="Zero-freshness static asset cached for static TTL",
+                description=(
+                    f"Static asset with origin freshness zero ({slug}) was stored with the "
+                    "static-extension TTL and served as X-Cache: HIT on a repeat request. "
+                    "Builtin Varnish marks beresp.ttl <= 0s hit-for-miss; the shared cache "
+                    "policy must not overwrite that."
+                ),
+                reproducer=(
+                    f"curl http://{varnish_host}:{varnish_port}{path}\n"
+                    f"curl http://{varnish_host}:{varnish_port}{path}"
+                ),
+                severity="CRITICAL"
+            ))
+        else:
+            print(f"[+] Zero-freshness static asset {path} stayed hit-for-miss")
+
+
 def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     print("==========================================================")
     print("PHASE 2: Coverage-Guided Property-Based Testing (CGPT)")
@@ -720,6 +781,7 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     test_host_header_properties(varnish_host, varnish_port, backend)
     test_vary_star_properties(varnish_host, varnish_port, backend)
     test_authorization_properties(varnish_host, varnish_port, backend)
+    test_zero_freshness_static_properties(varnish_host, varnish_port, backend)
     print(f"\nPhase 2 Complete. Findings: {len(findings)}")
     return [f.to_dict() for f in findings]
 
