@@ -412,6 +412,66 @@ def test_5xx_and_grace_properties(varnish_host, varnish_port, backend):
         ))
 
 
+# -------------------------------------------------------------
+# Property 7: Host Header Compliance & Casing Invariant (RFC 9112 / RFC 9110)
+# -------------------------------------------------------------
+def test_host_header_properties(varnish_host, varnish_port, backend):
+    print("\n--- [CGPT Property 7] Host Header Compliance & Casing Invariant ---")
+    import socket
+
+    def send_raw(raw_bytes):
+        s = socket.create_connection((varnish_host, varnish_port), timeout=5)
+        s.sendall(raw_bytes)
+        resp = b""
+        while True:
+            try:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                resp += chunk
+            except socket.timeout:
+                break
+        s.close()
+        status_line = resp.split(b"\r\n")[0].decode("iso-8859-1")
+        status_code = int(status_line.split(" ")[1]) if " " in status_line else 0
+        return status_code, resp
+
+    # HTTP/1.1 without Host header
+    code, _ = send_raw(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
+    if code != 400:
+        findings.append(Finding(
+            category="HTTP Compliance",
+            name="HTTP/1.1 request without Host header accepted",
+            description=f"HTTP/1.1 request lacking Host header returned {code} instead of 400 Bad Request",
+            reproducer=f"printf 'GET / HTTP/1.1\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+            severity="HIGH"
+        ))
+
+    # HTTP/1.0 without Host header should be accepted (200)
+    code_10, _ = send_raw(b"GET / HTTP/1.0\r\nConnection: close\r\n\r\n")
+    if code_10 != 200:
+        findings.append(Finding(
+            category="HTTP Compliance",
+            name="HTTP/1.0 request without Host header rejected",
+            description=f"HTTP/1.0 request lacking Host header returned {code_10} instead of 200 OK",
+            reproducer=f"printf 'GET / HTTP/1.0\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+            severity="MEDIUM"
+        ))
+
+    # Host casing invariance
+    test_path = f"/?host_prop_test={random.randint(10000, 99999)}"
+    send_raw(f"GET {test_path} HTTP/1.1\r\nHost: EXAMPLE.COM\r\nConnection: close\r\n\r\n".encode())
+    _, r_lower = send_raw(f"GET {test_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode())
+    if b"X-Cache: HIT" not in r_lower:
+        findings.append(Finding(
+            category="Cache Key Normalization",
+            name="Host header casing fragments cache",
+            description="Requests differing only in Host header casing did not share cache entry",
+            reproducer=f"curl -H 'Host: EXAMPLE.COM' ... && curl -H 'Host: example.com' ...",
+            severity="MEDIUM"
+        ))
+
+
 def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     print("==========================================================")
     print("PHASE 2: Coverage-Guided Property-Based Testing (CGPT)")
@@ -422,6 +482,7 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     test_http_methods_properties(varnish_host, varnish_port, backend)
     test_purge_acl_properties(varnish_host, varnish_port, backend)
     test_5xx_and_grace_properties(varnish_host, varnish_port, backend)
+    test_host_header_properties(varnish_host, varnish_port, backend)
     print(f"\nPhase 2 Complete. Findings: {len(findings)}")
     return [f.to_dict() for f in findings]
 
