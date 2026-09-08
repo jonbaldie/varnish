@@ -45,6 +45,11 @@ sub vcl_recv {
         return (pass);
     }
 
+    # Requests with Authorization must not be cached or served from cache (RFC 9111 §3.5).
+    if (req.http.Authorization) {
+        return (pass);
+    }
+
     # Remove cookies for static assets to improve cache hit rate.
     if (req.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
         unset req.http.Cookie;
@@ -72,6 +77,13 @@ sub vcl_backend_fetch {
 sub vcl_backend_response {
     # Responses containing Vary: * must not be cached (RFC 9111 §4.1).
     if (beresp.http.Vary ~ "(^|[,\s])\*([,\s]|$)") {
+        set beresp.uncacheable = true;
+        set beresp.ttl = 120s;
+        return (deliver);
+    }
+
+    # Responses to requests with Authorization must not be stored in shared cache (RFC 9111 §3.5).
+    if (bereq.http.Authorization) {
         set beresp.uncacheable = true;
         set beresp.ttl = 120s;
         return (deliver);
