@@ -70,6 +70,13 @@ sub vcl_backend_fetch {
 }
 
 sub vcl_backend_response {
+    # Responses containing Vary: * must not be cached (RFC 9111 §4.1).
+    if (beresp.http.Vary ~ "(^|[,\s])\*([,\s]|$)") {
+        set beresp.uncacheable = true;
+        set beresp.ttl = 120s;
+        return (deliver);
+    }
+
     if (beresp.http.Set-Cookie ||
         beresp.http.Surrogate-Control ~ "(?i)no-store" ||
         (!beresp.http.Surrogate-Control &&

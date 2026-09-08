@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -31,7 +31,7 @@ test-restart-docs:
 		echo "OK: README documents container restart workflow"; \
 		echo "=== Test: Restart documentation PASSED ==="
 
-test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale
+test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -504,6 +504,27 @@ test-post-not-cached:
 test-grace-stale:
 	@echo "=== Test: Grace serves stale cached object when backend is unavailable ==="
 	@./test/e2e/run-hostile-scenario.sh grace
+
+test-hostile-vary-star:
+	@echo "=== Test: Hostile backend Vary: * responses are not cached (RFC 9111 §4.1) ==="
+	@./test/e2e/run-hostile-scenario.sh vary-star
+
+test-hostile-vary-star-canary:
+	@echo "=== Test: Hostile Vary: * depends on shared cache policy ==="
+	@set -euo pipefail; \
+	log_file=$$(mktemp); \
+	trap 'rm -f "$$log_file"' EXIT; \
+	if HOSTILE_CACHE_POLICY_PATH="$$(pwd)/test/e2e/fixtures/cache-policy-vary-star-cached.vcl" ./test/e2e/run-hostile-scenario.sh vary-star >"$$log_file" 2>&1; then \
+		echo "FAIL: hostile vary-star scenario passed with a mutant shared cache policy"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	if ! grep -Eq "second vary-star request" "$$log_file"; then \
+		echo "FAIL: hostile vary-star canary should fail with semantic cache-domain assertion"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	echo "OK: hostile vary-star scenario failed under mutant shared cache policy"
 
 test-perf:
 	@echo "=== Test: Performance and caching effectiveness ==="

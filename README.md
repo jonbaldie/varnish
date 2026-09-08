@@ -76,6 +76,7 @@ The embedded default VCL includes generated backend configuration and the shared
 
 - **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. Override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
 - **Host header compliance** — rejects HTTP/1.1 requests without a `Host` header with 400 Bad Request (RFC 9112 §7.1); normalises `Host` header casing to lowercase (RFC 9110 §7.2).
+- **Vary header compliance** — marks origin responses containing wildcard `Vary: *` as uncacheable hit-for-miss, preventing shared caching (RFC 9111 §4.1).
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
 - **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
