@@ -41,13 +41,13 @@ sub vcl_recv {
         }
     }
 
+    if (req.method != "GET" && req.method != "HEAD") {
+        return (pass);
+    }
+
     # Remove cookies for static assets to improve cache hit rate.
     if (req.url ~ "(?i)\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?.*)?$") {
         unset req.http.Cookie;
-    }
-
-    if (req.method != "GET" && req.method != "HEAD") {
-        return (pass);
     }
 
     if (req.http.Cookie) {

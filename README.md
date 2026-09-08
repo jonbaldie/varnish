@@ -141,7 +141,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 
 **Proof matrix:**
 
-1. Static asset with `Cookie` strips the cookie before origin — assert `cookie=none`, `X-Cache: MISS` then `HIT`.
+1. Static asset with `Cookie` strips the cookie before origin on safe GET/HEAD requests — assert `cookie=none`, `X-Cache: MISS` then `HIT`. Mutating requests (`POST`, `PUT`, `DELETE`, `PATCH`) preserve `Cookie` headers and pass directly to origin.
 2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
 3. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
 

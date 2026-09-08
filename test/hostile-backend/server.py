@@ -174,6 +174,15 @@ class Handler(BaseHTTPRequestHandler):
         """
         self.do_GET()
 
+    def do_PUT(self) -> None:
+        self.do_GET()
+
+    def do_DELETE(self) -> None:
+        self.do_GET()
+
+    def do_PATCH(self) -> None:
+        self.do_GET()
+
     def log_message(self, format: str, *args) -> None:
         return
 
