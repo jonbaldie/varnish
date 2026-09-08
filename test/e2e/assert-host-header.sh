@@ -48,42 +48,52 @@ print(f"=== Asserting Host Header Behavior against {host}:{port} ===")
 print("1. Testing HTTP/1.1 request without Host header...")
 resp1 = send_request(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
 code1, hdrs1, body1 = parse_response(resp1)
-print(f"   Response status: {code1}")
-if code1 != 400:
-    print(f"FAIL: Expected HTTP 400 for HTTP/1.1 without Host header, got {code1}")
+print(f"   Response status: {code1}, Server: {hdrs1.get('server')}")
+if code1 != 400 or hdrs1.get("server", "").lower() != "varnish":
+    print(f"FAIL: Expected HTTP 400 from Varnish for HTTP/1.1 without Host header, got {code1} (server: {hdrs1.get('server')})")
     sys.exit(1)
-print("   OK: HTTP/1.1 without Host header returned 400 Bad Request")
+print("   OK: HTTP/1.1 without Host header returned 400 Bad Request from Varnish")
 
 # Test 2: HTTP/1.1 request with empty Host header must return 400 Bad Request
 print("2. Testing HTTP/1.1 request with empty Host header...")
 resp2 = send_request(b"GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n")
 code2, hdrs2, body2 = parse_response(resp2)
-print(f"   Response status: {code2}")
-if code2 != 400:
-    print(f"FAIL: Expected HTTP 400 for HTTP/1.1 with empty Host header, got {code2}")
+print(f"   Response status: {code2}, Server: {hdrs2.get('server')}")
+if code2 != 400 or hdrs2.get("server", "").lower() != "varnish":
+    print(f"FAIL: Expected HTTP 400 from Varnish for HTTP/1.1 with empty Host header, got {code2} (server: {hdrs2.get('server')})")
     sys.exit(1)
-print("   OK: HTTP/1.1 with empty Host header returned 400 Bad Request")
+print("   OK: HTTP/1.1 with empty Host header returned 400 Bad Request from Varnish")
 
 # Test 2b: HTTP/1.1 request with whitespace-only Host header must return 400 Bad Request
 print("2b. Testing HTTP/1.1 request with whitespace-only Host header...")
 resp2b = send_request(b"GET / HTTP/1.1\r\nHost:   \r\nConnection: close\r\n\r\n")
 code2b, hdrs2b, body2b = parse_response(resp2b)
-print(f"   Response status: {code2b}")
-if code2b != 400:
-    print(f"FAIL: Expected HTTP 400 for HTTP/1.1 with whitespace-only Host header, got {code2b}")
+print(f"   Response status: {code2b}, Server: {hdrs2b.get('server')}")
+if code2b != 400 or hdrs2b.get("server", "").lower() != "varnish":
+    print(f"FAIL: Expected HTTP 400 from Varnish for HTTP/1.1 with whitespace-only Host header, got {code2b} (server: {hdrs2b.get('server')})")
     sys.exit(1)
-print("   OK: HTTP/1.1 with whitespace-only Host header returned 400 Bad Request")
+print("   OK: HTTP/1.1 with whitespace-only Host header returned 400 Bad Request from Varnish")
+
+# Test 2d: HTTP/1.1 request with tab whitespace Host header must return 400 Bad Request
+print("2d. Testing HTTP/1.1 request with tab Host header...")
+resp2d = send_request(b"GET / HTTP/1.1\r\nHost: \t\r\nConnection: close\r\n\r\n")
+code2d, hdrs2d, body2d = parse_response(resp2d)
+print(f"   Response status: {code2d}, Server: {hdrs2d.get('server')}")
+if code2d != 400 or hdrs2d.get("server", "").lower() != "varnish":
+    print(f"FAIL: Expected HTTP 400 from Varnish for HTTP/1.1 with tab Host header, got {code2d} (server: {hdrs2d.get('server')})")
+    sys.exit(1)
+print("   OK: HTTP/1.1 with tab Host header returned 400 Bad Request from Varnish")
 
 # Test 2c: HTTP/1.1 HEAD and POST requests without Host header must return 400 Bad Request
 print("2c. Testing HTTP/1.1 HEAD and POST requests without Host header...")
 for method in [b"HEAD", b"POST"]:
     resp_m = send_request(method + b" / HTTP/1.1\r\nConnection: close\r\n\r\n")
-    code_m, _, _ = parse_response(resp_m)
-    print(f"   {method.decode()} without Host response status: {code_m}")
-    if code_m != 400:
-        print(f"FAIL: Expected HTTP 400 for HTTP/1.1 {method.decode()} without Host header, got {code_m}")
+    code_m, hdrs_m, _ = parse_response(resp_m)
+    print(f"   {method.decode()} without Host response status: {code_m}, Server: {hdrs_m.get('server')}")
+    if code_m != 400 or hdrs_m.get("server", "").lower() != "varnish":
+        print(f"FAIL: Expected HTTP 400 from Varnish for HTTP/1.1 {method.decode()} without Host header, got {code_m} (server: {hdrs_m.get('server')})")
         sys.exit(1)
-print("   OK: HTTP/1.1 HEAD and POST without Host header returned 400 Bad Request")
+print("   OK: HTTP/1.1 HEAD and POST without Host header returned 400 Bad Request from Varnish")
 
 # Test 3: HTTP/1.1 request with valid Host header must succeed (HTTP 200)
 print("3. Testing HTTP/1.1 request with valid Host header...")

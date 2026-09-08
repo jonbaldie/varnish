@@ -75,7 +75,7 @@ with `docker compose up -d --build`.
 The embedded default VCL includes generated backend configuration and the shared cache policy. The repo `default.vcl` remains a standalone sample for custom VCL mounts. The shared cache policy includes:
 
 - **Backend health probe** — 2s timeout, 5s interval, sliding window of 5 checks, threshold of 3. Override the probe path with `VARNISH_BACKEND_PROBE_PATH`.
-- **Host header compliance** — rejects HTTP/1.1 requests without a `Host` header with 400 Bad Request (RFC 9112 §7.1); normalises `Host` header casing to lowercase (RFC 9110 §7.2).
+- **Host header compliance** — rejects HTTP/1.1 requests with a missing, empty, or whitespace-only `Host` header with 400 Bad Request (RFC 9112 §7.1); normalises `Host` header casing to lowercase (RFC 9110 §7.2).
 - **Authorization header compliance** — passes requests carrying an `Authorization` header directly to origin, preventing authenticated responses from being cached or leaked across clients (RFC 9111 §3.5).
 - **Vary header compliance** — marks origin responses containing wildcard `Vary: *` as uncacheable hit-for-miss, preventing shared caching (RFC 9111 §4.1).
 - **Zero-freshness static assets** — static-extension URLs only receive the policy TTL when the origin granted positive freshness; responses with zero freshness (`max-age=0`, `s-maxage=0`, or an `Expires` date in the past) stay hit-for-miss (RFC 9111 §5.2).
