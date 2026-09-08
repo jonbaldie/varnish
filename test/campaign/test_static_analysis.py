@@ -164,10 +164,14 @@ def test_render_vcl_host_injections():
 
 def test_start_script_boundaries():
     print("--- Fuzzing start.sh validation logic ---")
+    start_sh = "/start.sh" if os.path.isfile("/start.sh") else os.path.abspath(os.path.join(os.path.dirname(__file__), "../../start.sh"))
     cases = [
         ({"VARNISH_LISTEN": ":80"}, "Listen missing host (:80)"),
         ({"VARNISH_LISTEN": "localhost:"}, "Listen missing port (localhost:)"),
         ({"VARNISH_LISTEN": "0.0.0.0:abc"}, "Listen non-numeric port"),
+        ({"VARNISH_LISTEN": "0.0.0.0:0"}, "Listen out-of-range port low (0)"),
+        ({"VARNISH_LISTEN": "0.0.0.0:70000"}, "Listen out-of-range port high (70000)"),
+        ({"VARNISH_STORAGE": "malloc"}, "Storage missing comma (malloc)"),
         ({"VARNISH_STORAGE": "malloc,"}, "Storage missing size (malloc,)"),
         ({"VARNISH_STORAGE": ",1g"}, "Storage missing type (,1g)"),
         ({"VARNISH_STORAGE": "unknown_backend,1g"}, "Storage invalid backend"),
@@ -180,7 +184,7 @@ def test_start_script_boundaries():
         env = os.environ.copy()
         env.update(env_override)
         # Run start.sh with timeout
-        rc, out, err = run_cmd("/start.sh", env=env, timeout=3)
+        rc, out, err = run_cmd(f"{start_sh}", env=env, timeout=3)
         
         # We expect validation failures to exit non-zero quickly with an ERROR message
         if "conflict" in label or "Nonexistent" in label:
@@ -192,7 +196,7 @@ def test_start_script_boundaries():
                     reproducer=f"{' '.join(f'{k}={v}' for k, v in env_override.items())} /start.sh",
                     severity="HIGH"
                 ))
-        elif "missing" in label or "non-numeric" in label:
+        elif "missing" in label or "non-numeric" in label or "out-of-range" in label:
             # Check if start.sh caught it or passed it down to varnishd
             combined = out + err
             if "Invalid VARNISH_LISTEN" not in combined and "Invalid VARNISH_STORAGE" not in combined:
