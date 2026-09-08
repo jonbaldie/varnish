@@ -144,7 +144,8 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 
 1. Static asset with `Cookie` strips the cookie before origin on safe GET/HEAD requests — assert `cookie=none`, `X-Cache: MISS` then `HIT`. Mutating requests (`POST`, `PUT`, `DELETE`, `PATCH`) preserve `Cookie` headers and pass directly to origin.
 2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
-3. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
+3. Dynamic URL whose query value ends in a static extension (e.g. `?q=jquery.js`) is not treated as a static asset — cookies reach origin per-client with separate request ids, while a real static asset with a query string (`/static/app.css?v=2`) still strips cookies and caches.
+4. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
 
 Out of scope: additional routes, extra Cache-Control permutations, replacing the nginx smoke backend.
 
