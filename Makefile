@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-grace-stale test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-integration test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-integration test-host-header test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -322,7 +322,32 @@ test-integration:
 		exit 1; \
 	fi; \
 	echo "OK: X-Cache HIT"; \
+	echo "Checking Host header compliance (RFC 9112 / RFC 9110)..."; \
+	./test/e2e/assert-host-header.sh; \
 	echo "=== Test: Integration test PASSED ==="
+
+test-host-header:
+	@echo "=== Test: Host header compliance (RFC 9112 / RFC 9110) ==="
+	@set -euo pipefail; \
+	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
+	docker compose up -d --build; \
+	echo "Waiting for services to be ready..."; \
+	timeout=60; \
+	while [ $$timeout -gt 0 ]; do \
+		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
+			echo "OK: Services are ready"; \
+			break; \
+		fi; \
+		sleep 2; \
+		timeout=$$((timeout - 2)); \
+	done; \
+	if [ $$timeout -eq 0 ]; then \
+		echo "FAIL: Services did not become ready within 60s"; \
+		docker compose logs; \
+		exit 1; \
+	fi; \
+	./test/e2e/assert-host-header.sh; \
+	echo "=== Test: Host header compliance PASSED ==="
 
 test-security:
 	@echo "=== Test: Security (non-root user) ==="
