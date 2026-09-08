@@ -472,6 +472,100 @@ def test_host_header_properties(varnish_host, varnish_port, backend):
         ))
 
 
+# -------------------------------------------------------------
+# Property 8: Vary: * Handling & RFC 9111 §4.1 Compliance
+# -------------------------------------------------------------
+def test_vary_star_properties(varnish_host, varnish_port, backend):
+    print("\n--- [CGPT Property 8] Vary: * Header Handling & RFC 9111 Compliance ---")
+
+    # Test 8.1: Origin response with Vary: * must never be cached
+    path = "/api/vary-star-test"
+    purge_url(varnish_host, varnish_port, path)
+
+    backend.set_route(
+        path,
+        status=200,
+        headers={
+            "Vary": "*",
+            "Content-Type": "application/json",
+        },
+        body='{"data": "dynamic-vary-star"}'
+    )
+
+    r1 = raw_http_request(varnish_host, varnish_port, "GET", path)
+    r2 = raw_http_request(varnish_host, varnish_port, "GET", path)
+
+    if "HIT" in r2["x_cache"]:
+        print("[CRITICAL RFC VIOLATION] Varnish cached response with Vary: *!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance",
+            name="Vary: * response cached and served from cache",
+            description=(
+                "When origin serves Vary: *, RFC 9111 §4.1 prohibits caching. "
+                "Varnish served X-Cache: HIT to subsequent request."
+            ),
+            reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} (returns Vary: *)\ncurl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT)",
+            severity="HIGH"
+        ))
+
+    # Test 8.2: Origin response with multi-value Vary containing * must never be cached
+    path_multi = "/api/vary-multi-test"
+    purge_url(varnish_host, varnish_port, path_multi)
+
+    backend.set_route(
+        path_multi,
+        status=200,
+        headers={
+            "Vary": "Accept-Encoding, *",
+            "Content-Type": "application/json",
+        },
+        body='{"data": "dynamic-multi-vary"}'
+    )
+
+    r1 = raw_http_request(varnish_host, varnish_port, "GET", path_multi)
+    r2 = raw_http_request(varnish_host, varnish_port, "GET", path_multi)
+
+    if "HIT" in r2["x_cache"]:
+        print("[CRITICAL RFC VIOLATION] Varnish cached response with multi-value Vary containing *!")
+        findings.append(Finding(
+            category="RFC 9111 Compliance",
+            name="Multi-value Vary containing * was cached",
+            description=(
+                "When origin serves Vary: Accept-Encoding, *, Varnish cached the response and served X-Cache: HIT."
+            ),
+            reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path_multi}",
+            severity="HIGH"
+        ))
+
+    # Test 8.3: Specific Vary: Accept-Encoding without * should continue caching
+    path_normal = f"/api/vary-normal-{random.randint(10000, 99999)}"
+    purge_url(varnish_host, varnish_port, path_normal)
+
+    backend.set_route(
+        path_normal,
+        status=200,
+        headers={
+            "Vary": "Accept-Encoding",
+            "Cache-Control": "public, max-age=3600",
+            "Content-Type": "text/plain",
+        },
+        body="cacheable-with-vary-ae"
+    )
+
+    r1 = raw_http_request(varnish_host, varnish_port, "GET", path_normal, headers={"Accept-Encoding": "gzip"})
+    r2 = raw_http_request(varnish_host, varnish_port, "GET", path_normal, headers={"Accept-Encoding": "gzip"})
+
+    if "HIT" not in r2["x_cache"]:
+        print("[REGRESSION] Normal Vary: Accept-Encoding failed to cache!")
+        findings.append(Finding(
+            category="Cache Functionality",
+            name="Normal Vary: Accept-Encoding not cached",
+            description="Response with standard Vary: Accept-Encoding was not served as HIT on identical subsequent request",
+            reproducer=f"curl -H 'Accept-Encoding: gzip' http://{varnish_host}:{varnish_port}{path_normal}",
+            severity="MEDIUM"
+        ))
+
+
 def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     print("==========================================================")
     print("PHASE 2: Coverage-Guided Property-Based Testing (CGPT)")
@@ -483,6 +577,7 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     test_purge_acl_properties(varnish_host, varnish_port, backend)
     test_5xx_and_grace_properties(varnish_host, varnish_port, backend)
     test_host_header_properties(varnish_host, varnish_port, backend)
+    test_vary_star_properties(varnish_host, varnish_port, backend)
     print(f"\nPhase 2 Complete. Findings: {len(findings)}")
     return [f.to_dict() for f in findings]
 

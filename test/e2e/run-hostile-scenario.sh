@@ -7,7 +7,7 @@ scenario="${1:-}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ready_timeout=60
 curl_max_time=10
-available_scenarios=(static-cookie account-cookie set-cookie 5xx post grace purge-acl)
+available_scenarios=(static-cookie account-cookie set-cookie 5xx post grace purge-acl vary-star)
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -86,6 +86,10 @@ configure_scenario() {
       HOSTILE_SCENARIO_SUBNET=203.0.113.0/24
       HOSTILE_SCENARIO_VARNISH_IP=203.0.113.2
       assertion_script="$repo_root/test/e2e/assert-hostile-purge-acl.sh"
+      ;;
+    vary-star)
+      use_scenario_compose "vary-star-test" 8086
+      assertion_script="$repo_root/test/e2e/assert-hostile-vary-star.sh"
       ;;
     *)
       unknown_scenario "$scenario"

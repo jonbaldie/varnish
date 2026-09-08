@@ -116,6 +116,52 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if clean_path == "/vary-star":
+            body = "route=vary-star\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Vary": "*"},
+            )
+            return
+
+        if clean_path == "/vary-multi-star":
+            body = "route=vary-multi-star\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Vary": "Accept-Encoding, *"},
+            )
+            return
+
+        if clean_path == "/vary-star-whitespace":
+            body = "route=vary-star-whitespace\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Vary": "  *  "},
+            )
+            return
+
+        if clean_path == "/vary-normal":
+            body = "route=vary-normal\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Vary": "Accept-Encoding", "Cache-Control": "public, max-age=60"},
+            )
+            return
+
+        if clean_path == "/static/vary-star.css":
+            body = "asset=vary-star.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Vary": "*", "Cache-Control": "public, max-age=86400"},
+            )
+            return
+
         self.respond(404, "route=not-found\n")
 
     def do_POST(self) -> None:

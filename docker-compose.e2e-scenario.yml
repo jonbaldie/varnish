@@ -9,7 +9,7 @@ services:
       VARNISH_BACKEND_PORT: "80"
       VARNISH_BACKEND_PROBE_PATH: /
     volumes:
-      - ./cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro
+      - ${HOSTILE_CACHE_POLICY_PATH:-./cache-policy.vcl}:/etc/varnish/cache-policy.vcl:ro
     depends_on:
       web:
         condition: service_healthy
