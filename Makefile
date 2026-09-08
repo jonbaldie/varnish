@@ -159,36 +159,49 @@ test-smoke-runtime-interface:
 			exit 1; \
 		fi; \
 		docker rm -f $$name >/dev/null; \
-		log_file="$$tmpdir/invalid-listen.log"; \
-		set +e; \
-		docker run --rm -e VARNISH_LISTEN=invalid $(IMAGE) >"$$log_file" 2>&1 & \
-		pid=$$!; \
-		for _ in 1 2 3 4 5; do \
-			if ! kill -0 $$pid >/dev/null 2>&1; then \
-				break; \
+		assert_fails_fast() { \
+			local var_name="$$1"; \
+			local var_val="$$2"; \
+			local expected_msg="$$3"; \
+			local log="$$tmpdir/$$(echo "$$var_name-$$var_val" | tr -c 'a-zA-Z0-9' '_').log"; \
+			set +e; \
+			docker run --rm -e "$$var_name=$$var_val" $(IMAGE) >"$$log" 2>&1 & \
+			local pid=$$!; \
+			for _ in 1 2 3 4 5; do \
+				if ! kill -0 $$pid >/dev/null 2>&1; then \
+					break; \
+				fi; \
+				sleep 1; \
+			done; \
+			if kill -0 $$pid >/dev/null 2>&1; then \
+				kill $$pid >/dev/null 2>&1 || true; \
+				wait $$pid >/dev/null 2>&1 || true; \
+				echo "FAIL: $$var_name='$$var_val' should fail fast"; \
+				cat "$$log"; \
+				exit 1; \
+			else \
+				wait $$pid; \
+				local status=$$?; \
+				if [ $$status -ne 1 ]; then \
+					echo "FAIL: $$var_name='$$var_val' expected exit code 1, got $$status"; \
+					cat "$$log"; \
+					exit 1; \
+				fi; \
 			fi; \
-			sleep 1; \
-		done; \
-		if kill -0 $$pid >/dev/null 2>&1; then \
-			kill $$pid >/dev/null 2>&1 || true; \
-			wait $$pid >/dev/null 2>&1 || true; \
-			status=124; \
-		else \
-			wait $$pid; \
-			status=$$?; \
-		fi; \
-		set -e; \
-		if [ $$status -eq 0 ] || [ $$status -eq 124 ]; then \
-			echo "FAIL: invalid VARNISH_LISTEN should fail fast"; \
-			cat "$$log_file"; \
-			exit 1; \
-		fi; \
-	if ! grep -q "Invalid VARNISH_LISTEN" "$$log_file"; then \
-		echo "FAIL: invalid VARNISH_LISTEN should fail clearly"; \
-		cat "$$log_file"; \
-		exit 1; \
-	fi; \
-	log_file="$$tmpdir/start-backend-conflict.log"; \
+			set -e; \
+			if ! grep -q "$$expected_msg" "$$log"; then \
+				echo "FAIL: $$var_name='$$var_val' expected '$$expected_msg'"; \
+				cat "$$log"; \
+				exit 1; \
+			fi; \
+		}; \
+		assert_fails_fast "VARNISH_LISTEN" "invalid" "Invalid VARNISH_LISTEN"; \
+		assert_fails_fast "VARNISH_LISTEN" "0.0.0.0:0" "Invalid VARNISH_LISTEN '0.0.0.0:0'; expected port between 1 and 65535"; \
+		assert_fails_fast "VARNISH_LISTEN" "0.0.0.0:70000" "Invalid VARNISH_LISTEN '0.0.0.0:70000'; expected port between 1 and 65535"; \
+		assert_fails_fast "VARNISH_STORAGE" "malloc" "Invalid VARNISH_STORAGE 'malloc'; expected backend,size"; \
+		assert_fails_fast "VARNISH_STORAGE" "malloc," "Invalid VARNISH_STORAGE 'malloc,'; expected backend,size"; \
+		assert_fails_fast "VARNISH_STORAGE" ",1g" "Invalid VARNISH_STORAGE ',1g'; expected backend,size"; \
+		log_file="$$tmpdir/start-backend-conflict.log"; \
 	set +e; \
 	docker run --rm -e VARNISH_START='echo hi' -e VARNISH_BACKEND_HOST=localhost $(IMAGE) >"$$log_file" 2>&1 & \
 	pid=$$!; \

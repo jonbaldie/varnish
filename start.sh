@@ -47,12 +47,23 @@ case "${listen_port}" in
 		;;
 esac
 
+if [ "${listen_port}" -lt 1 ] || [ "${listen_port}" -gt 65535 ]; then
+	fail "Invalid VARNISH_LISTEN '${listen}'; expected port between 1 and 65535"
+fi
+
 if [ ! -f "${vcl_path}" ]; then
 	fail "Invalid VARNISH_VCL '${vcl_path}'; file does not exist"
 fi
 
-storage_backend="${storage%%,*}"
-storage_size="${storage#*,}"
+case "${storage}" in
+	*,*)
+		storage_backend="${storage%%,*}"
+		storage_size="${storage#*,}"
+		;;
+	*)
+		fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
+		;;
+esac
 
 if [ -z "${storage_backend}" ] || [ -z "${storage_size}" ]; then
 	fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
