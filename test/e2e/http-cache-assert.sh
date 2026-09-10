@@ -151,6 +151,21 @@ assert_header_contains() {
   fi
 }
 
+assert_header_absent() {
+    local name="$1"
+    local header_name="$2"
+    local context="$3"
+    local actual_value
+
+    actual_value="$(response_header_value "$name" "$header_name" || true)"
+
+    if [ -n "$actual_value" ]; then
+        fail_response_assertion \
+            "expected ${context} not expose header ${header_name}, got '${actual_value}'" \
+            "$name"
+    fi
+}
+
 assert_header_missing_or_not_contains() {
   local name="$1"
   local header_name="$2"

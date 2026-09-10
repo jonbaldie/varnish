@@ -75,6 +75,18 @@ sub vcl_backend_fetch {
 }
 
 sub vcl_backend_response {
+    # Keep the normalized cache identity on the object so a successful
+    # unsafe request can invalidate every variant for this exact host and URL.
+    set beresp.http.X-Varnish-Cache-Host = bereq.http.host;
+    set beresp.http.X-Varnish-Cache-URL = bereq.url;
+
+    # A pass only bypasses lookup for the mutating request. RFC 9111 §4.4
+    # also requires a successful unsafe response to invalidate the target URI.
+    if (bereq.method ~ "^(POST|PUT|DELETE|PATCH)$" && beresp.status < 400) {
+        ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host +
+            " && obj.http.X-Varnish-Cache-URL == " + bereq.url);
+    }
+
     # Responses containing Vary: * must not be cached (RFC 9111 §4.1).
     if (beresp.http.Vary ~ "(^|[,\s])\*([,\s]|$)") {
         set beresp.uncacheable = true;
@@ -140,6 +152,9 @@ sub vcl_backend_response {
 }
 
 sub vcl_deliver {
+    unset resp.http.X-Varnish-Cache-Host;
+    unset resp.http.X-Varnish-Cache-URL;
+
     if (obj.hits > 0) {
         set resp.http.X-Cache = "HIT";
     } else {
