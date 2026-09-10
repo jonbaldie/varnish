@@ -16,6 +16,9 @@ zero_freshness_urls=(
   "${base_url}/static/zero-maxage.css"
   "${base_url}/static/zero-smaxage.css"
   "${base_url}/static/past-expires.css"
+  "${base_url}/static/expires-zero.css"
+  "${base_url}/static/expires-minus-one.css"
+  "${base_url}/static/expires-invalid.css"
 )
 
 for url in "${zero_freshness_urls[@]}"; do
@@ -47,22 +50,32 @@ for url in "${zero_freshness_urls[@]}"; do
   echo "OK: $asset third request also went to origin"
 done
 
-# Control: a genuinely fresh static asset is still cached and served as HIT.
-url_fresh="${base_url}/static/app.css"
-http_request purge-fresh "$url_fresh" -X PURGE
-assert_http_status purge-fresh 200 "fresh static PURGE"
+# Controls: static assets that genuinely are fresh must still be cached. Each
+# exercises a freshness form the invalid-Expires rule must not swallow.
+fresh_urls=(
+  "${base_url}/static/app.css"
+  "${base_url}/static/future-expires.css"
+  "${base_url}/static/maxage-over-invalid-expires.css"
+)
 
-echo "Requesting /static/app.css for the first time (expects MISS)..."
-http_request fresh-1 "$url_fresh"
-assert_http_status fresh-1 200 "fresh static first request"
-assert_cache_state fresh-1 MISS "fresh static first request"
-fresh_id="$(assert_origin_request_id_present fresh-1 "fresh static first request")"
+for url in "${fresh_urls[@]}"; do
+  asset="$(basename "$url")"
 
-echo "Requesting /static/app.css again (expects HIT)..."
-http_request fresh-2 "$url_fresh"
-assert_http_status fresh-2 200 "fresh static second request"
-assert_cache_state fresh-2 HIT "fresh static second request"
-assert_same_origin_request_id fresh-2 "$fresh_id" "fresh static second request"
-echo "OK: Fresh static asset still cached and served as HIT"
+  http_request purge-fresh-"$asset" "$url" -X PURGE
+  assert_http_status purge-fresh-"$asset" 200 "$asset PURGE"
+
+  echo "Requesting $asset for the first time (expects MISS)..."
+  http_request fresh-"$asset"-1 "$url"
+  assert_http_status fresh-"$asset"-1 200 "$asset fresh first request"
+  assert_cache_state fresh-"$asset"-1 MISS "$asset fresh first request"
+  cached_id="$(assert_origin_request_id_present fresh-"$asset"-1 "$asset fresh first request")"
+
+  echo "Requesting $asset again (expects HIT)..."
+  http_request fresh-"$asset"-2 "$url"
+  assert_http_status fresh-"$asset"-2 200 "$asset fresh second request"
+  assert_cache_state fresh-"$asset"-2 HIT "$asset fresh second request"
+  assert_same_origin_request_id fresh-"$asset"-2 "$cached_id" "$asset fresh second request"
+  echo "OK: $asset still cached and served as HIT"
+done
 
 echo "=== All hostile zero-TTL tests passed ==="
