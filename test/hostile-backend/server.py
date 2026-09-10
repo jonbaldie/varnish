@@ -122,6 +122,58 @@ class Handler(BaseHTTPRequestHandler):
                 )
             return
 
+        # Non-static pages whose origin sends an invalid Expires value.
+        # RFC 9111 §5.3: an invalid date format, especially the value "0",
+        # means already expired. Varnish's RFC2616_Ttl treats these as an
+        # absent header and falls back to default_ttl, so the shared cache
+        # policy must recognise them for every URL, not just static ones.
+        invalid_expires_pages = {
+            "/page/expires-zero": "0",
+            "/page/expires-minus-one": "-1",
+            "/page/expires-invalid": "not-a-date",
+        }
+        if clean_path in invalid_expires_pages:
+            page = clean_path.rsplit("/", 1)[-1]
+            body = f"page={page}\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/html; charset=utf-8",
+                extra_headers={"Expires": invalid_expires_pages[clean_path]},
+            )
+            return
+
+        # Control: a non-static page with a valid future Expires is genuinely
+        # fresh and must still be cached.
+        if clean_path == "/page/future-expires":
+            body = "page=future-expires\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/html; charset=utf-8",
+                extra_headers={
+                    "Expires": email.utils.formatdate(
+                        time.time() + 86400, usegmt=True
+                    ),
+                },
+            )
+            return
+
+        # Control: Cache-Control max-age overrides Expires entirely
+        # (RFC 9111 §5.3), so an invalid Expires beside it is ignored.
+        if clean_path == "/page/maxage-over-invalid-expires":
+            body = "page=maxage-over-invalid-expires\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/html; charset=utf-8",
+                extra_headers={
+                    "Cache-Control": "public, max-age=600",
+                    "Expires": "0",
+                },
+            )
+            return
+
         # Zero-freshness static assets: the origin allows storage (no
         # no-store/no-cache/private) but grants zero freshness. Builtin
         # Varnish treats beresp.ttl <= 0s as hit-for-miss; the shared cache
