@@ -78,4 +78,69 @@ for url in "${fresh_urls[@]}"; do
   echo "OK: $asset still cached and served as HIT"
 done
 
+# Invalid Expires on a non-static URL. RFC 9111 §5.3 requires an unparseable
+# date, especially "0", to be read as already expired, so an HTML page carrying
+# one must stay hit-for-miss instead of inheriting default_ttl.
+
+invalid_expires_pages=(
+  "${base_url}/page/expires-zero"
+  "${base_url}/page/expires-minus-one"
+  "${base_url}/page/expires-invalid"
+)
+
+for url in "${invalid_expires_pages[@]}"; do
+  page="$(basename "$url")"
+
+  http_request purge-page-"$page" "$url" -X PURGE
+  assert_http_status purge-page-"$page" 200 "$page PURGE"
+
+  echo "Requesting page $page for the first time (expects MISS from origin)..."
+  http_request page-"$page"-1 "$url"
+  assert_http_status page-"$page"-1 200 "$page first request"
+  assert_cache_state page-"$page"-1 MISS "$page first request"
+  assert_body_field_equals page-"$page"-1 page "$page" "$page first request"
+  first_id="$(assert_origin_request_id_present page-"$page"-1 "$page first request")"
+  echo "OK: $page first request was MISS (ID: ${first_id})"
+
+  echo "Requesting page $page again (must not be a fresh HIT)..."
+  http_request page-"$page"-2 "$url"
+  assert_http_status page-"$page"-2 200 "$page second request"
+  assert_cache_state page-"$page"-2 MISS "$page second request"
+  assert_different_origin_request_id page-"$page"-2 "$first_id" "$page second request"
+  echo "OK: $page stayed hit-for-miss, origin contacted again"
+
+  echo "Requesting page $page a third time (hit-for-miss persists)..."
+  http_request page-"$page"-3 "$url"
+  assert_http_status page-"$page"-3 200 "$page third request"
+  assert_cache_state page-"$page"-3 MISS "$page third request"
+  assert_different_origin_request_id page-"$page"-3 "$first_id" "$page third request"
+  echo "OK: $page third request also went to origin"
+done
+
+# Controls: non-static pages that genuinely are fresh must still be cached.
+fresh_pages=(
+  "${base_url}/page/future-expires"
+  "${base_url}/page/maxage-over-invalid-expires"
+)
+
+for url in "${fresh_pages[@]}"; do
+  page="$(basename "$url")"
+
+  http_request purge-fresh-page-"$page" "$url" -X PURGE
+  assert_http_status purge-fresh-page-"$page" 200 "$page PURGE"
+
+  echo "Requesting page $page for the first time (expects MISS)..."
+  http_request fresh-page-"$page"-1 "$url"
+  assert_http_status fresh-page-"$page"-1 200 "$page fresh first request"
+  assert_cache_state fresh-page-"$page"-1 MISS "$page fresh first request"
+  cached_id="$(assert_origin_request_id_present fresh-page-"$page"-1 "$page fresh first request")"
+
+  echo "Requesting page $page again (expects HIT)..."
+  http_request fresh-page-"$page"-2 "$url"
+  assert_http_status fresh-page-"$page"-2 200 "$page fresh second request"
+  assert_cache_state fresh-page-"$page"-2 HIT "$page fresh second request"
+  assert_same_origin_request_id fresh-page-"$page"-2 "$cached_id" "$page fresh second request"
+  echo "OK: $page still cached and served as HIT"
+done
+
 echo "=== All hostile zero-TTL tests passed ==="

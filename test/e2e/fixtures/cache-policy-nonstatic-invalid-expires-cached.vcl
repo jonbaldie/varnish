@@ -115,28 +115,23 @@ sub vcl_backend_response {
         return (deliver);
     }
 
-    # An Expires value that is not a valid HTTP-date — especially the common
-    # "0", and also "-1" or any unparseable string — means already expired
-    # (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value as an absent
-    # header and falls back to default_ttl, so the invalid form has to be
-    # recognised here, for every URL and not just static ones. Cache-Control
-    # max-age/s-maxage overrides Expires entirely (RFC 9111 §5.3), so an
-    # invalid Expires alongside either directive is ignored.
-    if (beresp.http.Expires &&
-        beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
-        beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$") {
-        set beresp.uncacheable = true;
-        set beresp.ttl = 120s;
-        return (deliver);
-    }
-
     if (bereq.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
         # Apply the static TTL only when the origin granted positive
         # freshness. Zero freshness (max-age=0, s-maxage=0, or an Expires
         # date in the past) must stay hit-for-miss, as builtin
         # vcl_backend_response would do for beresp.ttl <= 0s (RFC 9111 §5.2).
-        # An invalid Expires is already handled above.
-        if (beresp.ttl > 0s) {
+        #
+        # An Expires value that is not a valid HTTP-date — especially the
+        # common "0", and also "-1" or any unparseable string — means already
+        # expired (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value
+        # as an absent header and falls back to default_ttl, so the invalid
+        # form has to be recognised here. Cache-Control max-age/s-maxage
+        # overrides Expires entirely (RFC 9111 §5.3), so an invalid Expires
+        # alongside either directive is ignored.
+        if (beresp.ttl > 0s &&
+            !(beresp.http.Expires &&
+              beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
+              beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$")) {
             set beresp.ttl = 1d;
             set beresp.grace = 7d;
         } else {
