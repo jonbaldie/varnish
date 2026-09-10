@@ -533,7 +533,7 @@ test-post-not-cached:
 	@./test/e2e/run-hostile-scenario.sh post
 
 test-hostile-post-canary:
-	@echo "=== Test: Hostile POST scenario depends on preserving cookies for mutating requests ==="
+	@echo "=== Test: Hostile POST scenario depends on mutation invalidation and cookie preservation ==="
 	@set -euo pipefail; \
 	log_file=$$(mktemp); \
 	trap 'rm -f "$$log_file"' EXIT; \
@@ -542,7 +542,7 @@ test-hostile-post-canary:
 		cat "$$log_file"; \
 		exit 1; \
 	fi; \
-	if ! grep -Eq "POST request with Cookie" "$$log_file"; then \
+	if ! grep -Eq "GET after successful POST|POST request with Cookie" "$$log_file"; then \
 		echo "FAIL: hostile post canary should fail with semantic cache-domain assertion"; \
 		cat "$$log_file"; \
 		exit 1; \

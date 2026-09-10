@@ -110,6 +110,18 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if clean_path in ("/mutation-error-4xx", "/mutation-error-5xx"):
+            if self.command in ("POST", "PUT", "DELETE", "PATCH"):
+                status = 409 if clean_path.endswith("4xx") else 500
+                self.respond(status, f"route={clean_path.lstrip('/')}\n")
+            else:
+                self.respond(
+                    200,
+                    f"route={clean_path.lstrip('/')}\n",
+                    extra_headers={"Cache-Control": "public, max-age=60"},
+                )
+            return
+
         # Zero-freshness static assets: the origin allows storage (no
         # no-store/no-cache/private) but grants zero freshness. Builtin
         # Varnish treats beresp.ttl <= 0s as hit-for-miss; the shared cache
@@ -335,6 +347,16 @@ class Handler(BaseHTTPRequestHandler):
                 200,
                 body,
                 extra_headers={"Vary": "Accept-Encoding", "Cache-Control": "public, max-age=60"},
+            )
+            return
+
+        if clean_path == "/vary-custom":
+            variant = self.headers.get("X-Variant") or "none"
+            body = f"route=vary-custom\nvariant={variant}\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Vary": "X-Variant", "Cache-Control": "public, max-age=60"},
             )
             return
 
