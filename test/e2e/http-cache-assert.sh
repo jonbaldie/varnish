@@ -63,6 +63,42 @@ http_request() {
     local url="$2"
     shift 2
 
+    if [ "$#" -eq 2 ] && [ "$1" = "-X" ] && [ "$2" = "PURGE" ]; then
+        local varnish_container
+        local host_header
+        local loopback_url
+
+        varnish_container="$(
+            docker ps \
+                --filter "label=com.docker.compose.project=${TEST_PROJECT:?TEST_PROJECT must be set}" \
+                --format '{{.ID}} {{.Label "com.docker.compose.service"}}' \
+                | awk '$2 ~ /^varnish/ { print $1; exit }'
+        )"
+
+        if [ -z "$varnish_container" ]; then
+            echo "FAIL: Could not find Varnish container for project $TEST_PROJECT"
+            exit 1
+        fi
+
+        host_header="$(printf '%s\n' "$url" | sed -E 's#^https?://([^/]+).*#\1#')"
+        loopback_url="$(printf '%s\n' "$url" | sed -E 's#^https?://[^/]+#http://127.0.0.1#')"
+
+        docker run --rm \
+            --network "container:$varnish_container" \
+            --volume "${TEST_TMPDIR:?TEST_TMPDIR must be set}:/test-tmp" \
+            alpine \
+            sh -c '
+                apk add -q curl
+                curl -sS --max-time 10 \
+                    -D "/test-tmp/$1.headers" \
+                    -o "/test-tmp/$1.body" \
+                    -X PURGE \
+                    -H "Host: $3" \
+                    "$2"
+            ' sh "$name" "$loopback_url" "$host_header"
+        return
+    fi
+
     curl -sS --max-time 10 \
         -D "$(response_headers_path "$name")" \
         -o "$(response_body_path "$name")" \
