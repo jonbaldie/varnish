@@ -1,7 +1,9 @@
 acl purge {
     "localhost";
     "127.0.0.1";
-    "::1";
+    "10.0.0.0"/8;
+    "172.16.0.0"/12;
+    "192.168.0.0"/16;
 }
 
 sub vcl_recv {
@@ -116,10 +118,7 @@ sub vcl_backend_response {
         # form has to be recognised here. Cache-Control max-age/s-maxage
         # overrides Expires entirely (RFC 9111 §5.3), so an invalid Expires
         # alongside either directive is ignored.
-        if (beresp.ttl > 0s &&
-            !(beresp.http.Expires &&
-              beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
-              beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$")) {
+        if (beresp.ttl > 0s) {
             set beresp.ttl = 1d;
             set beresp.grace = 7d;
         } else {

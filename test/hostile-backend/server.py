@@ -151,6 +151,57 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Invalid Expires values. RFC 9111 §5.3: a cache MUST interpret an
+        # invalid date format, especially the value "0", as already expired.
+        # Varnish's RFC2616_Ttl treats these as an absent header and falls
+        # back to default_ttl, so the shared cache policy must recognise them.
+        invalid_expires = {
+            "/static/expires-zero.css": "0",
+            "/static/expires-minus-one.css": "-1",
+            "/static/expires-invalid.css": "not-a-date",
+        }
+        if clean_path in invalid_expires:
+            asset = clean_path.rsplit("/", 1)[-1]
+            body = f"asset={asset}\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Expires": invalid_expires[clean_path]},
+            )
+            return
+
+        # Control: a valid HTTP-date in the future is real freshness, and a
+        # static asset carrying one must still be cached.
+        if clean_path == "/static/future-expires.css":
+            body = "asset=future-expires.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Expires": email.utils.formatdate(
+                        time.time() + 86400, usegmt=True
+                    ),
+                },
+            )
+            return
+
+        # Control: Cache-Control max-age overrides Expires entirely
+        # (RFC 9111 §5.3), so an invalid Expires beside it is ignored.
+        if clean_path == "/static/maxage-over-invalid-expires.css":
+            body = "asset=maxage-over-invalid-expires.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Cache-Control": "public, max-age=600",
+                    "Expires": "0",
+                },
+            )
+            return
+
         if clean_path == "/static/app.css":
             cookie_state = "present" if cookie_header else "none"
             body = f"asset=app.css\ncookie={cookie_state}\n"
