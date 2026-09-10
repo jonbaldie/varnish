@@ -16,6 +16,9 @@ zero_freshness_urls=(
   "${base_url}/static/zero-maxage.css"
   "${base_url}/static/zero-smaxage.css"
   "${base_url}/static/past-expires.css"
+  "${base_url}/static/expires-zero.css"
+  "${base_url}/static/expires-minus-one.css"
+  "${base_url}/static/expires-garbage.css"
 )
 
 for url in "${zero_freshness_urls[@]}"; do
@@ -64,5 +67,24 @@ assert_http_status fresh-2 200 "fresh static second request"
 assert_cache_state fresh-2 HIT "fresh static second request"
 assert_same_origin_request_id fresh-2 "$fresh_id" "fresh static second request"
 echo "OK: Fresh static asset still cached and served as HIT"
+
+# Control: a valid Expires date in the future still grants freshness, so the
+# invalid-Expires rule must not swallow well-formed dates.
+url_future="${base_url}/static/future-expires.css"
+http_request purge-future "$url_future" -X PURGE
+assert_http_status purge-future 200 "future-expires PURGE"
+
+echo "Requesting /static/future-expires.css for the first time (expects MISS)..."
+http_request future-1 "$url_future"
+assert_http_status future-1 200 "future-expires first request"
+assert_cache_state future-1 MISS "future-expires first request"
+future_id="$(assert_origin_request_id_present future-1 "future-expires first request")"
+
+echo "Requesting /static/future-expires.css again (expects HIT)..."
+http_request future-2 "$url_future"
+assert_http_status future-2 200 "future-expires second request"
+assert_cache_state future-2 HIT "future-expires second request"
+assert_same_origin_request_id future-2 "$future_id" "future-expires second request"
+echo "OK: Valid future Expires still cached and served as HIT"
 
 echo "=== All hostile zero-TTL tests passed ==="

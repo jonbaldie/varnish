@@ -145,6 +145,38 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Invalid Expires values. RFC 9111 5.3 requires a cache to treat an
+        # unparseable Expires - especially the value "0" - as already expired.
+        # Varnish's RFC2616_Ttl treats these as an absent header and falls back
+        # to default_ttl, so the shared cache policy must catch them itself.
+        for asset, expires in (
+            ("expires-zero.css", "0"),
+            ("expires-minus-one.css", "-1"),
+            ("expires-garbage.css", "not-a-date"),
+        ):
+            if clean_path == f"/static/{asset}":
+                self.respond(
+                    200,
+                    f"asset={asset}\n",
+                    content_type="text/css; charset=utf-8",
+                    extra_headers={"Expires": expires},
+                )
+                return
+
+        # Control: a valid Expires date in the future still grants freshness.
+        if clean_path == "/static/future-expires.css":
+            self.respond(
+                200,
+                "asset=future-expires.css\n",
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Expires": email.utils.formatdate(
+                        time.time() + 3600, usegmt=True
+                    ),
+                },
+            )
+            return
+
         if clean_path == "/static/app.css":
             cookie_state = "present" if cookie_header else "none"
             body = f"asset=app.css\ncookie={cookie_state}\n"

@@ -98,22 +98,9 @@ sub vcl_backend_response {
         return (deliver);
     }
 
-    # An Expires value that is not a valid HTTP-date - notably "0" or "-1" -
-    # means the response is already expired (RFC 9111 5.3). Varnish's
-    # RFC2616_Ttl treats such a value as an absent header and falls back to
-    # default_ttl, so it must be caught here. Cache-Control max-age /
-    # s-maxage overrides Expires, so only apply this when neither is present.
-    if (beresp.http.Expires &&
-        (!beresp.http.Cache-Control ||
-          beresp.http.Cache-Control !~ "(?i)(^|[,;[:space:]])(s-maxage|max-age)[[:space:]]*=") &&
-        beresp.http.Expires !~ "^[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$" &&
-        beresp.http.Expires !~ "^[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT$" &&
-        beresp.http.Expires !~ "^[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}$") {
-        set beresp.uncacheable = true;
-        set beresp.ttl = 120s;
-        return (deliver);
-    }
-
+    # Mutant: omits the invalid-Expires rule (RFC 9111 5.3). Varnish treats
+    # Expires: 0 / -1 / garbage as an absent header and falls back to
+    # default_ttl, so such static assets get stored as fresh 1-day objects.
     if (bereq.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
         # Apply the static TTL only when the origin granted positive
         # freshness. Zero freshness (max-age=0, s-maxage=0, or an Expires
