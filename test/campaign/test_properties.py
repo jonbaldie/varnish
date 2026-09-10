@@ -269,6 +269,58 @@ def test_origin_security_properties(varnish_host, varnish_port, backend):
                 severity="CRITICAL"
             ))
 
+    # Test 2.3: Surrogate-Control must not disable Cache-Control handling
+    # unless it actually grants surrogate freshness (max-age). An ESI
+    # capability advertisement (content="ESI/1.0") is NOT a storage grant.
+    print("Testing Surrogate-Control does not disable Cache-Control private/no-store...")
+    surrogate_variants = [
+        ('content="ESI/1.0"', "esi-advertisement"),
+        ("max-age=0", "zero-maxage"),
+        ("OFF", "off"),
+    ]
+    for sc_value, sc_slug in surrogate_variants:
+        for cc_directive in ["private", "no-store", "no-cache"]:
+            path = f"/private-sc-{cc_directive}-{sc_slug}"
+            purge_url(varnish_host, varnish_port, path)
+
+            backend.set_route(
+                path,
+                status=200,
+                headers={
+                    "Cache-Control": f"{cc_directive}, max-age=3600",
+                    "Surrogate-Control": sc_value,
+                    "Content-Type": "text/plain",
+                },
+                body=f"Confidential data with {cc_directive} and Surrogate-Control: {sc_value}"
+            )
+
+            r1 = raw_http_request(varnish_host, varnish_port, "GET", path)
+            r2 = raw_http_request(varnish_host, varnish_port, "GET", path)
+
+            if "HIT" in r2["x_cache"]:
+                print(f"[CRITICAL SECURITY VULNERABILITY] Varnish cached response with "
+                      f"'Cache-Control: {cc_directive}' because of Surrogate-Control: {sc_value}!")
+                findings.append(Finding(
+                    category="RFC 9111 Compliance / Privacy",
+                    name=(f"Varnish caches response with Cache-Control: {cc_directive} "
+                          f"when origin also sends Surrogate-Control: {sc_value}"),
+                    description=(
+                        f"Origin returned 'Cache-Control: {cc_directive}' plus 'Surrogate-Control: {sc_value}' "
+                        f"({sc_meaning}). A Surrogate-Control value that does not itself grant surrogate "
+                        "freshness (max-age) must not disable the Cache-Control directives. "
+                        "vcl_backend_response only honours no-cache/no-store/private when Surrogate-Control "
+                        "is absent, so any other Surrogate-Control value (including a bare ESI advertisement) "
+                        "lets Varnish store and replay private responses to other clients."
+                    ),
+                    reproducer=(
+                        f"Origin must return Cache-Control: {cc_directive}, max-age=3600 plus "
+                        f"Surrogate-Control: {sc_value}\n"
+                        f"curl -i http://{varnish_host}:{varnish_port}{path} (X-Cache: MISS)\n"
+                        f"curl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT!)"
+                    ),
+                    severity="CRITICAL"
+                ))
+
 
 # -------------------------------------------------------------
 # Property 3: Accept-Encoding Metamorphic Properties
