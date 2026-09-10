@@ -89,14 +89,12 @@ sub vcl_backend_response {
         return (deliver);
     }
 
-    # Surrogate-Control (W3C Edge Architecture §4.2) overrides Cache-Control
-    # for surrogates only when it actually grants surrogate freshness: a
-    # positive max-age. Any other value — including the ESI capability
-    # advertisement content="ESI/1.0", a zero max-age, or OFF — leaves the
-    # Cache-Control no-cache/no-store/private directives in force.
+    # Mutant: deliberately treats ANY Surrogate-Control header as a full
+    # replacement for Cache-Control, so a bare ESI capability advertisement
+    # (content="ESI/1.0") disables Cache-Control private/no-store handling.
     if (beresp.http.Set-Cookie ||
-        beresp.http.Surrogate-Control ~ "(?i:no-store|no-cache)" ||
-        (beresp.http.Surrogate-Control !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
+        beresp.http.Surrogate-Control ~ "(?i)no-store" ||
+        (!beresp.http.Surrogate-Control &&
           beresp.http.Cache-Control ~ "(?i:no-cache|no-store|private)")) {
         set beresp.uncacheable = true;
         set beresp.ttl = 120s;

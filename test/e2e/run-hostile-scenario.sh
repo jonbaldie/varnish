@@ -7,7 +7,7 @@ scenario="${1:-}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ready_timeout=60
 curl_max_time=10
-available_scenarios=(static-cookie account-cookie set-cookie query-suffix 5xx post grace purge-acl vary-star authorization zero-ttl)
+available_scenarios=(static-cookie account-cookie set-cookie query-suffix 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore)
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -102,6 +102,10 @@ configure_scenario() {
     zero-ttl)
       use_scenario_compose "zero-ttl-test" 8088
       assertion_script="$repo_root/test/e2e/assert-hostile-zero-ttl.sh"
+      ;;
+    surrogate-esi-nostore)
+      use_scenario_compose "surrogate-esi-nostore-test" 8089
+      assertion_script="$repo_root/test/e2e/assert-hostile-surrogate-esi.sh"
       ;;
     *)
       unknown_scenario "$scenario"

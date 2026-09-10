@@ -187,6 +187,64 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Surrogate-Control used as an ESI capability advertisement: it
+        # declares the origin's ESI processing level, it is NOT a storage or
+        # freshness grant. The Cache-Control directives must stay in force
+        # for the shared cache (W3C Edge Architecture, Surrogate-Control).
+        if clean_path == "/private-esi":
+            body = "route=private-esi\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={
+                    "Surrogate-Control": 'content="ESI/1.0"',
+                    "Cache-Control": "private, no-store",
+                },
+            )
+            return
+
+        # Genuine surrogate freshness grant: Surrogate-Control with max-age
+        # overrides Cache-Control for the shared cache by design.
+        if clean_path == "/surrogate-fresh":
+            body = "route=surrogate-fresh\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={
+                    "Surrogate-Control": "max-age=60",
+                    "Cache-Control": "private, no-store",
+                },
+            )
+            return
+
+        # Zero surrogate freshness: max-age=0 grants the surrogate nothing,
+        # so Cache-Control: private stays in force.
+        if clean_path == "/surrogate-zero-maxage":
+            body = "route=surrogate-zero-maxage\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={
+                    "Surrogate-Control": "max-age=0",
+                    "Cache-Control": "private, max-age=3600",
+                },
+            )
+            return
+
+        # Surrogate-Control no-store: the surrogate itself must not store,
+        # even though Cache-Control grants public freshness.
+        if clean_path == "/surrogate-nostore":
+            body = "route=surrogate-nostore\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={
+                    "Surrogate-Control": "no-store",
+                    "Cache-Control": "public, max-age=60",
+                },
+            )
+            return
+
         if clean_path == "/vary-star":
             body = "route=vary-star\n"
             self.respond(
