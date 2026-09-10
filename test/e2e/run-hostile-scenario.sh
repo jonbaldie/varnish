@@ -7,7 +7,7 @@ scenario="${1:-}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ready_timeout=60
 curl_max_time=10
-available_scenarios=(static-cookie account-cookie set-cookie query-suffix 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore)
+available_scenarios=(static-cookie account-cookie set-cookie query-suffix accept-encoding 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore)
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -72,6 +72,10 @@ configure_scenario() {
     query-suffix)
       use_legacy_hostile_compose
       assertion_script="$repo_root/test/e2e/assert-hostile-query-suffix.sh"
+      ;;
+    accept-encoding)
+      use_legacy_hostile_compose
+      assertion_script="$repo_root/test/e2e/assert-hostile-accept-encoding.sh"
       ;;
     5xx)
       use_scenario_compose "5xx-test" 8082

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -31,7 +31,7 @@ test-restart-docs:
 		echo "OK: README documents container restart workflow"; \
 		echo "=== Test: Restart documentation PASSED ==="
 
-test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary
+test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -501,6 +501,10 @@ test-hostile-query-suffix-canary:
 		exit 1; \
 	fi; \
 	echo "OK: hostile query-suffix scenario failed under mutant shared cache policy"
+
+test-hostile-accept-encoding:
+	@echo "=== Test: Hostile origin sees correct Accept-Encoding normalization ==="
+	@./test/e2e/run-hostile-scenario.sh accept-encoding
 
 test-e2e-scenario-config:
 	@echo "=== Test: E2E hostile scenario config ==="

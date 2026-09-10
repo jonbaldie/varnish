@@ -9,6 +9,7 @@ The fixture provides three critical test endpoints:
 - /static/app.css: Proves cookies are stripped from cacheable static assets
 - /account: Proves cookie-bearing dynamic requests are passed, not cached
 - /set-cookie: Proves responses with Set-Cookie are isolated per client
+- /echo-headers: Proves request header normalization at the origin
 
 Every response includes X-Backend-Request-Id to prove cache hits vs origin hits.
 """
@@ -88,6 +89,11 @@ class Handler(BaseHTTPRequestHandler):
         # backend as healthy before any test assertions run.
         if clean_path in ("/", "/ready"):
             self.respond(200, "ready=ok\n")
+            return
+
+        if clean_path == "/echo-headers":
+            accept_encoding = self.headers.get("Accept-Encoding") or "none"
+            self.respond(200, f"accept_encoding={accept_encoding}\n")
             return
 
         if clean_path == "/error":
