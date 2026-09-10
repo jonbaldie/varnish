@@ -119,6 +119,16 @@ make test              # default build, smoke, integration, and cache checks
 make test-e2e-hard     # stronger hostile-backend proofs
 ```
 
+Fleet shares an 8-core macOS host with other repositories. During iteration, run one named test target at a time, for example `make test-vcl-compile`. Do not start independent Docker test targets in parallel.
+
+Before handoff, run the complete Docker gates serially:
+
+```bash
+COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard
+```
+
+Wait for this command to return before you start another Docker test or campaign. The test recipes use teardown traps to remove containers and Compose resources. Do not interrupt or overlap that teardown.
+
 ### Hostile Backend Fixture Contract
 
 The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate hostile backend fixture exists only to prove behaviours nginx can't expose clearly enough for E2E assertions.
