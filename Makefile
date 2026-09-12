@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -31,7 +31,7 @@ test-restart-docs:
 		echo "OK: README documents container restart workflow"; \
 		echo "=== Test: Restart documentation PASSED ==="
 
-test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary
+test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary
 
 test-existence:
 	@echo "=== Test: File existence ==="
@@ -511,6 +511,23 @@ test-hostile-query-suffix-canary:
 test-hostile-accept-encoding:
 	@echo "=== Test: Hostile origin sees correct Accept-Encoding normalization ==="
 	@./test/e2e/run-hostile-scenario.sh accept-encoding
+
+test-hostile-accept-encoding-canary:
+	@echo "=== Test: Hostile accept-encoding depends on case-insensitive normalization ==="
+	@set -euo pipefail; \
+	log_file=$$(mktemp); \
+	trap 'rm -f "$$log_file"' EXIT; \
+	if HOSTILE_CACHE_POLICY_PATH="$$(pwd)/test/e2e/fixtures/cache-policy-accept-encoding-case-sensitive.vcl" ./test/e2e/run-hostile-scenario.sh accept-encoding >"$$log_file" 2>&1; then \
+		echo "FAIL: hostile accept-encoding scenario passed with a mutant shared cache policy"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	if ! grep -Eq "gzip-title-case origin request" "$$log_file"; then \
+		echo "FAIL: hostile accept-encoding canary should fail with semantic cache-domain assertion"; \
+		cat "$$log_file"; \
+		exit 1; \
+	fi; \
+	echo "OK: hostile accept-encoding scenario failed under mutant shared cache policy"
 
 test-e2e-scenario-config:
 	@echo "=== Test: E2E hostile scenario config ==="
