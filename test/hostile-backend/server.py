@@ -110,6 +110,44 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Stale revalidation endpoints (RFC 9111 §5.2.2.2, §5.2.2.8, §5.2.2.10).
+        # Responses carrying must-revalidate or proxy-revalidate (or s-maxage,
+        # which implies proxy-revalidate) must not be served stale from grace.
+        revalidate_routes = {
+            "/revalidate/must-revalidate": "public, max-age=1, must-revalidate",
+            "/revalidate/proxy-revalidate": "public, max-age=1, proxy-revalidate",
+            "/revalidate/s-maxage": "public, s-maxage=1",
+            "/revalidate/casing-must-revalidate": "public, max-age=1, MUST-REVALIDATE",
+            "/revalidate/s-maxage-space": "public, s-maxage = 1",
+            "/revalidate/normal-grace": "public, max-age=1",
+        }
+        if clean_path in revalidate_routes:
+            route_name = clean_path.rsplit("/", 1)[-1]
+            body = f"route={route_name}\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Cache-Control": revalidate_routes[clean_path]},
+            )
+            return
+
+        revalidate_static = {
+            "/static/must-revalidate.css": "public, max-age=1, must-revalidate",
+            "/static/proxy-revalidate.css": "public, max-age=1, proxy-revalidate",
+            "/static/s-maxage.css": "public, s-maxage=1",
+            "/static/normal-grace.css": "public, max-age=1",
+        }
+        if clean_path in revalidate_static:
+            asset = clean_path.rsplit("/", 1)[-1]
+            body = f"asset={asset}\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Cache-Control": revalidate_static[clean_path]},
+            )
+            return
+
         if clean_path in ("/mutation-error-4xx", "/mutation-error-5xx"):
             if self.command in ("POST", "PUT", "DELETE", "PATCH"):
                 status = 409 if clean_path.endswith("4xx") else 500

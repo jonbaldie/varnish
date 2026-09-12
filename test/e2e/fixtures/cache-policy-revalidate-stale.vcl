@@ -153,15 +153,6 @@ sub vcl_backend_response {
         set beresp.grace = 24h;
     }
 
-    # RFC 9111 §5.2.2.2, §5.2.2.8, §5.2.2.10: Stale responses must not be served
-    # without origin revalidation when prohibited by must-revalidate or
-    # proxy-revalidate (or s-maxage, which implies proxy-revalidate). Setting
-    # beresp.grace to 0s forces synchronous origin validation once stale and
-    # returns a 503 gateway error if origin is unreachable.
-    if (beresp.http.Cache-Control ~ "(?i)(?:^|[,;\s])\s*(?:(?:must-revalidate|proxy-revalidate)(?:$|[,;\s])|s-maxage\s*=)") {
-        set beresp.grace = 0s;
-    }
-
     return (deliver);
 }
 
