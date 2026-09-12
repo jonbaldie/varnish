@@ -28,12 +28,12 @@ sub vcl_recv {
     if (req.http.Accept-Encoding) {
         if (req.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
             unset req.http.Accept-Encoding;
-        } elsif (req.http.Accept-Encoding ~ "(?i)(^|,)[[:space:]]*gzip([[:space:]]*;|[[:space:]]*,|$)" &&
-                 req.http.Accept-Encoding !~ "(?i)(^|,)[[:space:]]*gzip[[:space:]]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0(\.0*)?([[:space:]]*[,;]|$)") {
+        } elsif (req.http.Accept-Encoding ~ "(^|,)[[:space:]]*gzip([[:space:]]*;|[[:space:]]*,|$)" &&
+                 req.http.Accept-Encoding !~ "(^|,)[[:space:]]*gzip[[:space:]]*;[[:space:]]*q=0(\.0*)?([[:space:]]*[,;]|$)") {
             set req.http.Accept-Encoding = "gzip";
             set req.http.X-Normalized-AE = "gzip";
-        } elsif (req.http.Accept-Encoding ~ "(?i)(^|,)[[:space:]]*deflate([[:space:]]*;|[[:space:]]*,|$)" &&
-                 req.http.Accept-Encoding !~ "(?i)(^|,)[[:space:]]*deflate[[:space:]]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0(\.0*)?([[:space:]]*[,;]|$)") {
+        } elsif (req.http.Accept-Encoding ~ "(^|,)[[:space:]]*deflate([[:space:]]*;|[[:space:]]*,|$)" &&
+                 req.http.Accept-Encoding !~ "(^|,)[[:space:]]*deflate[[:space:]]*;[[:space:]]*q=0(\.0*)?([[:space:]]*[,;]|$)") {
             set req.http.Accept-Encoding = "deflate";
             set req.http.X-Normalized-AE = "deflate";
         } else {

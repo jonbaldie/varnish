@@ -372,6 +372,49 @@ def test_accept_encoding_properties(varnish_host, varnish_port, backend):
             severity="MEDIUM"
         ))
 
+    # Test 3.3: Uppercase / mixed-case content-codings normalized (RFC 9110 §8.4.1)
+    for sample_ae, expected_ae in [("Gzip", "gzip"), ("GZIP", "gzip"), ("Deflate", "deflate"), ("DEFLATE", "deflate")]:
+        path = f"/echo-headers/test-ae-casing-{sample_ae.lower()}"
+        r = raw_http_request(
+            varnish_host, varnish_port, "GET", path,
+            headers={"Accept-Encoding": sample_ae}
+        )
+        data = json.loads(r["body"])
+        backend_ae = data.get("accept_encoding_received")
+        if backend_ae != expected_ae:
+            print(f"[BUG] Client sent '{sample_ae}' but Varnish forwarded '{backend_ae}' instead of '{expected_ae}'!")
+            findings.append(Finding(
+                category="HTTP RFC Compliance",
+                name=f"Accept-Encoding: {sample_ae} not normalized to {expected_ae}",
+                description=(
+                    f"RFC 9110 §8.4.1 specifies all content-coding values are case-insensitive. "
+                    f"Varnish received '{sample_ae}' and forwarded '{backend_ae}' instead of '{expected_ae}'."
+                ),
+                reproducer=f"curl -H 'Accept-Encoding: {sample_ae}' http://{varnish_host}:{varnish_port}{path}",
+                severity="HIGH"
+            ))
+
+    # Test 3.4: Uppercase Q parameter refusal respected (RFC 9110 §5.6.6)
+    path = "/echo-headers/test-ae-upper-q0"
+    r = raw_http_request(
+        varnish_host, varnish_port, "GET", path,
+        headers={"Accept-Encoding": "gzip; Q=0, deflate"}
+    )
+    data = json.loads(r["body"])
+    backend_ae = data.get("accept_encoding_received")
+    if backend_ae != "deflate":
+        print(f"[BUG] Client sent 'gzip; Q=0, deflate' but Varnish forwarded '{backend_ae}' instead of 'deflate'!")
+        findings.append(Finding(
+            category="HTTP RFC Compliance",
+            name="Accept-Encoding: uppercase Q=0 ignored, forcing unwanted encoding",
+            description=(
+                "RFC 9110 §5.6.6 specifies parameter names are case-insensitive. "
+                f"Client refused gzip via 'Q=0' but Varnish forwarded '{backend_ae}' instead of 'deflate'."
+            ),
+            reproducer=f"curl -H 'Accept-Encoding: gzip; Q=0, deflate' http://{varnish_host}:{varnish_port}{path}",
+            severity="HIGH"
+        ))
+
 
 # -------------------------------------------------------------
 # Property 4: HTTP Methods & Verbs
