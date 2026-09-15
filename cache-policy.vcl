@@ -5,10 +5,14 @@ acl purge {
 }
 
 sub vcl_recv {
-    if ((!req.http.host || req.http.host ~ "^[[:space:]]*$") &&
-        req.esi_level == 0 &&
-        req.proto == "HTTP/1.1") {
-        # In HTTP/1.1, Host is required (RFC 9112 §7.1).
+    if (req.esi_level == 0 &&
+        req.proto == "HTTP/1.1" &&
+        (!req.http.host ||
+         req.http.host ~ "^[[:space:]]*$" ||
+         req.http.host !~ "(?i)^(?:\[(?:[0-9a-f:.]+|v[0-9a-f]+\.[a-z0-9._~!$&'()*+,;=:-]+)\]|(?:[a-z0-9._~!$&'()*+,;=-]|%[0-9a-f]{2})+)(?::[0-9]*)?$")) {
+        # HTTP/1.1 requires a valid Host authority value (RFC 9112 §7.1,
+        # RFC 9110 §7.2). Reject userinfo, whitespace, invalid delimiters,
+        # and non-numeric ports before cache lookup or backend forwarding.
         return (synth(400));
     }
 
