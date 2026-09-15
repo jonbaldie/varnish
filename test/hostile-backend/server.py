@@ -110,6 +110,26 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Cacheable targets referenced by Location/Content-Location headers
+        # returned from unsafe-method endpoints (RFC 9111 §4.4).
+        if clean_path == "/location-target":
+            body = "route=location-target\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Cache-Control": "public, max-age=3600"},
+            )
+            return
+
+        if clean_path == "/content-location-target":
+            body = "route=content-location-target\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Cache-Control": "public, max-age=3600"},
+            )
+            return
+
         # Stale revalidation endpoints (RFC 9111 §5.2.2.2, §5.2.2.8, §5.2.2.10).
         # Responses carrying must-revalidate or proxy-revalidate (or s-maxage,
         # which implies proxy-revalidate) must not be served stale from grace.
@@ -146,6 +166,46 @@ class Handler(BaseHTTPRequestHandler):
                 content_type="text/css; charset=utf-8",
                 extra_headers={"Cache-Control": revalidate_static[clean_path]},
             )
+            return
+
+        # Unsafe-method endpoints that reference a second URI via the
+        # Location or Content-Location response header (RFC 9111 §4.4).
+        # The query string is echoed into the referenced URI so each test
+        # run exercises cache objects unique to that run.
+        if clean_path in (
+            "/create-rel",
+            "/create-abs",
+            "/create-cross-host",
+            "/create-content-location",
+        ):
+            if self.command in ("POST", "PUT", "DELETE", "PATCH"):
+                query = self.path.split("?", 1)[1] if "?" in self.path else ""
+                suffix = f"?{query}" if query else ""
+                if clean_path == "/create-rel":
+                    extra = {"Location": f"/location-target{suffix}"}
+                    self.respond(201, "route=create-rel\n", extra_headers=extra)
+                elif clean_path == "/create-abs":
+                    host = self.headers.get("Host") or "localhost"
+                    extra = {"Location": f"http://{host}/location-target{suffix}"}
+                    self.respond(201, "route=create-abs\n", extra_headers=extra)
+                elif clean_path == "/create-cross-host":
+                    extra = {
+                        "Location": f"http://other.example.test:9999/location-target{suffix}"
+                    }
+                    self.respond(201, "route=create-cross-host\n", extra_headers=extra)
+                else:
+                    extra = {
+                        "Content-Location": f"/content-location-target{suffix}"
+                    }
+                    self.respond(
+                        200, "route=create-content-location\n", extra_headers=extra
+                    )
+            else:
+                self.respond(
+                    200,
+                    f"route={clean_path.lstrip('/')}\n",
+                    extra_headers={"Cache-Control": "public, max-age=60"},
+                )
             return
 
         if clean_path in ("/mutation-error-4xx", "/mutation-error-5xx"):

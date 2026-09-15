@@ -92,6 +92,59 @@ sub vcl_backend_fetch {
     }
 }
 
+# RFC 9111 §4.4: a successful unsafe response must also invalidate any URI
+# referenced in its Location or Content-Location header. The reference is
+# passed in beresp.http.X-Varnish-Cache-Ref and resolved against the cache
+# identity (host + URL) used by the ban above. Multi-valued fields (Varnish
+# joins repeats with ", ") and scheme-relative ("//host/path") or
+# relative-without-slash references are skipped: they cannot be resolved to
+# a single cache identity safely in VCL.
+sub invalidate_reference {
+    if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
+        # Absolute reference: the authority is the cache host identity
+        # (default ports are equivalent to an omitted port), and the path
+        # with query, minus any fragment, is the cache URL identity.
+        set beresp.http.X-Varnish-Cache-Ref-Host =
+            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://", "");
+        set beresp.http.X-Varnish-Cache-Ref-Host =
+            regsub(beresp.http.X-Varnish-Cache-Ref-Host, "[/?#].*$", "");
+        if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https://") {
+            set beresp.http.X-Varnish-Cache-Ref-Host =
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":443$", "");
+        } else {
+            set beresp.http.X-Varnish-Cache-Ref-Host =
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":80$", "");
+        }
+        set beresp.http.X-Varnish-Cache-Ref-URL =
+            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://[^/?#]+", "");
+        set beresp.http.X-Varnish-Cache-Ref-URL =
+            regsub(beresp.http.X-Varnish-Cache-Ref-URL, "#.*$", "");
+        # An authority-only reference has an empty path; the effective
+        # request URI is "/".
+        if (beresp.http.X-Varnish-Cache-Ref-URL !~ "^/") {
+            set beresp.http.X-Varnish-Cache-Ref-URL = "/";
+        }
+    } elsif (beresp.http.X-Varnish-Cache-Ref ~ "^/" &&
+             beresp.http.X-Varnish-Cache-Ref !~ "^//") {
+        # Same-host relative reference: the cache host identity is the
+        # request's own host, already normalized in vcl_recv.
+        set beresp.http.X-Varnish-Cache-Ref-Host = bereq.http.host;
+        set beresp.http.X-Varnish-Cache-Ref-URL =
+            regsub(beresp.http.X-Varnish-Cache-Ref, "#.*$", "");
+    }
+
+    # Only a reference sharing the request's host identity may invalidate:
+    # the cache has no authority over other hosts' entries.
+    if (beresp.http.X-Varnish-Cache-Ref-Host == bereq.http.host) {
+        ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host +
+            " && obj.http.X-Varnish-Cache-URL == " + beresp.http.X-Varnish-Cache-Ref-URL);
+    }
+
+    unset beresp.http.X-Varnish-Cache-Ref;
+    unset beresp.http.X-Varnish-Cache-Ref-Host;
+    unset beresp.http.X-Varnish-Cache-Ref-URL;
+}
+
 sub vcl_backend_response {
     # Keep the normalized cache identity on the object so a successful
     # unsafe request can invalidate every variant for this exact host and URL.
@@ -103,6 +156,16 @@ sub vcl_backend_response {
     if (bereq.method ~ "^(POST|PUT|DELETE|PATCH)$" && beresp.status < 400) {
         ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host +
             " && obj.http.X-Varnish-Cache-URL == " + bereq.url);
+
+        if (beresp.http.Location && beresp.http.Location !~ ", ") {
+            set beresp.http.X-Varnish-Cache-Ref = beresp.http.Location;
+            call invalidate_reference;
+        }
+
+        if (beresp.http.Content-Location && beresp.http.Content-Location !~ ", ") {
+            set beresp.http.X-Varnish-Cache-Ref = beresp.http.Content-Location;
+            call invalidate_reference;
+        }
     }
 
     # Responses containing Vary: * must not be cached (RFC 9111 §4.1).

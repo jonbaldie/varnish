@@ -140,6 +140,8 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 | `GET /static/app.css` | Cacheable static asset; must echo whether a `Cookie` reached origin |
 | `GET /account` | Dynamic pass-through; must echo caller identity from `Cookie` |
 | `GET /set-cookie` | Must return `Set-Cookie`; must not be shared across clients |
+| `GET /location-target`, `GET /content-location-target` | Cacheable targets referenced by unsafe-method responses (RFC 9111 §4.4) |
+| unsafe `/create-rel`, `/create-abs`, `/create-cross-host`, `/create-content-location` | Must return `Location`/`Content-Location` referencing the targets above |
 
 **Every response must include:**
 - `X-Backend: hostile` — proves the backend handled the request.
@@ -157,6 +159,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
 3. Dynamic URL whose query value ends in a static extension (e.g. `?q=jquery.js`) is not treated as a static asset — cookies reach origin per-client with separate request ids, while a real static asset with a query string (`/static/app.css?v=2`) still strips cookies and caches.
 4. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
+5. A successful unsafe request whose response carries `Location` or `Content-Location` (RFC 9111 §4.4) invalidates the cached object for the referenced URI on the same host (relative or absolute reference), while a cross-host reference must not invalidate same-host cache entries.
 
 Out of scope: additional routes, extra Cache-Control permutations, replacing the nginx smoke backend.
 
