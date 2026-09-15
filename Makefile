@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-integration test-host-header test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -348,6 +348,10 @@ test-host-header:
 	fi; \
 	./test/e2e/assert-host-header.sh; \
 	echo "=== Test: Host header compliance PASSED ==="
+
+test-host-header-invalid:
+	@echo "=== Test: Invalid Host header values are rejected (RFC 9112 / RFC 9110) ==="
+	@./test/e2e/run-hostile-scenario.sh host-header
 
 test-security:
 	@echo "=== Test: Security (non-root user) ==="

@@ -48,7 +48,7 @@ echo "$unknown_output" | grep -q 'Unknown hostile scenario: does-not-exist' || {
   exit 1
 }
 
-echo "$unknown_output" | grep -q 'Available scenarios: static-cookie, account-cookie, set-cookie, query-suffix, accept-encoding, 5xx, post, grace, purge-acl, vary-star, authorization, zero-ttl' || {
+echo "$unknown_output" | grep -q 'Available scenarios: static-cookie, account-cookie, set-cookie, query-suffix, accept-encoding, 5xx, post, grace, purge-acl, vary-star, authorization, zero-ttl, surrogate-esi-nostore, revalidate, host-header' || {
   echo "FAIL: unknown scenario should list available scenarios"
   echo "$unknown_output"
   exit 1
