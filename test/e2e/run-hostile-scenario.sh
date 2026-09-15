@@ -7,7 +7,7 @@ scenario="${1:-}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ready_timeout=60
 curl_max_time=10
-available_scenarios=(static-cookie account-cookie set-cookie query-suffix accept-encoding 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore revalidate host-header)
+available_scenarios=(static-cookie account-cookie set-cookie query-suffix accept-encoding 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore revalidate host-header unsafe-location)
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -118,6 +118,10 @@ configure_scenario() {
     host-header)
       use_legacy_hostile_compose
       assertion_script="$repo_root/test/e2e/assert-invalid-host-header.sh"
+      ;;
+    unsafe-location)
+      use_scenario_compose "unsafe-location-test" 8091
+      assertion_script="$repo_root/test/e2e/assert-hostile-unsafe-location.sh"
       ;;
     *)
       unknown_scenario "$scenario"
