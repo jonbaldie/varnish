@@ -47,6 +47,13 @@ sub vcl_recv {
                  req.http.Accept-Encoding !~ "(?i)(^|,)[[:space:]]*deflate[[:space:]]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0(\.0*)?([[:space:]]*[,;]|$)") {
             set req.http.Accept-Encoding = "deflate";
             set req.http.X-Normalized-AE = "deflate";
+        # A wildcard accepts any available coding not explicitly listed
+        # (RFC 9110 §12.5.3). Prefer gzip unless it or the wildcard is q=0.
+        } elsif (req.http.Accept-Encoding ~ "(?i)(^|,)[[:space:]]*\*[[:space:]]*(;|,|$)" &&
+                 req.http.Accept-Encoding !~ "(?i)(^|,)[[:space:]]*\*[[:space:]]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0(\.0*)?([[:space:]]*[,;]|$)" &&
+                 req.http.Accept-Encoding !~ "(?i)(^|,)[[:space:]]*gzip[[:space:]]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0(\.0*)?([[:space:]]*[,;]|$)") {
+            set req.http.Accept-Encoding = "gzip";
+            set req.http.X-Normalized-AE = "gzip";
         } else {
             unset req.http.Accept-Encoding;
         }
