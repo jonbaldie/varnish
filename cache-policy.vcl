@@ -19,7 +19,9 @@ sub vcl_recv {
     # The default HTTP port is equivalent to an omitted port (RFC 9110
     # sections 4.2.3 and 7.2). Normalize it before cache lookup and mutation
     # invalidation so both Host forms share one cache identity.
-    set req.http.host = regsub(req.http.host, ":80$", "");
+    if (req.http.host) {
+        set req.http.host = regsub(req.http.host, ":80$", "");
+    }
 
     if (req.method == "PURGE") {
         if (!client.ip ~ purge) {
