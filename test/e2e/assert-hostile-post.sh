@@ -195,6 +195,36 @@ assert_cache_state normalized-after MISS "lowercase Host after uppercase POST"
 assert_different_origin_request_id normalized-after "$normalized_id" "lowercase Host after uppercase POST"
 echo "OK: Host normalization shared the invalidation identity"
 
+echo "Testing default-port Host normalization shares cache and invalidation identity..."
+default_port_url="http://localhost:8084/short-cache?default-port=${case_id}"
+http_request default-port-unqualified-first "$default_port_url" -H 'Host: example.com'
+assert_cache_state default-port-unqualified-first MISS "unqualified Host first GET"
+default_port_first_id="$(assert_origin_request_id_present default-port-unqualified-first "unqualified Host first GET")"
+http_request default-port-qualified-second "$default_port_url" -H 'Host: example.com:80'
+assert_cache_state default-port-qualified-second HIT "default-port Host second GET"
+assert_same_origin_request_id default-port-qualified-second "$default_port_first_id" "default-port Host second GET"
+
+http_request default-port-qualified-mutation "$default_port_url" -X POST -H 'Host: example.com:80'
+assert_http_status default-port-qualified-mutation 200 "successful default-port Host POST"
+assert_cache_state default-port-qualified-mutation MISS "successful default-port Host POST"
+http_request default-port-unqualified-after-qualified "$default_port_url" -H 'Host: example.com'
+assert_cache_state default-port-unqualified-after-qualified MISS "GET after default-port Host POST"
+assert_different_origin_request_id \
+    default-port-unqualified-after-qualified \
+    "$default_port_first_id" \
+    "GET after default-port Host POST"
+
+http_request default-port-unqualified-mutation "$default_port_url" -X POST -H 'Host: example.com'
+assert_http_status default-port-unqualified-mutation 200 "successful unqualified Host POST"
+assert_cache_state default-port-unqualified-mutation MISS "successful unqualified Host POST"
+http_request default-port-qualified-after-unqualified "$default_port_url" -H 'Host: example.com:80'
+assert_cache_state default-port-qualified-after-unqualified MISS "GET after unqualified Host POST"
+assert_different_origin_request_id \
+    default-port-qualified-after-unqualified \
+    "$default_port_first_id" \
+    "GET after unqualified Host POST"
+echo "OK: default-port Host normalization shared cache and invalidation identity"
+
 echo "Testing all Vary variants for one exact URL are invalidated..."
 vary_url="http://localhost:8084/vary-custom?vary=${case_id}"
 http_request vary-plain-first "$vary_url" -H 'X-Variant: plain'
