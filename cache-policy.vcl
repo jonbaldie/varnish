@@ -124,6 +124,10 @@ sub invalidate_reference {
         if (beresp.http.X-Varnish-Cache-Ref-URL !~ "^/") {
             set beresp.http.X-Varnish-Cache-Ref-URL = "/";
         }
+        if (beresp.http.X-Varnish-Cache-Ref-Host ~ "[[:upper:]]") {
+            set beresp.http.X-Varnish-Cache-Ref-Host =
+                beresp.http.X-Varnish-Cache-Ref-Host.lower();
+        }
     } elsif (beresp.http.X-Varnish-Cache-Ref ~ "^/" &&
              beresp.http.X-Varnish-Cache-Ref !~ "^//") {
         # Same-host relative reference: the cache host identity is the
