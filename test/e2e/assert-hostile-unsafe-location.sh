@@ -109,3 +109,60 @@ http_request cross-after "${base_url}${cross_target}"
 assert_cache_state cross-after HIT "GET cross-host target after cross-host POST"
 assert_same_origin_request_id cross-after "$cross_id" "GET cross-host target after cross-host POST"
 echo "OK: cross-host Location did not invalidate the same-host cached object"
+
+echo "Testing mixed-case Location host invalidation for every unsafe method..."
+for method in POST PUT DELETE PATCH; do
+    method_slug="$(printf '%s' "$method" | tr '[:upper:]' '[:lower:]')"
+    run_referenced_invalidation_case \
+        "mixed-${method_slug}" \
+        "$method" \
+        "/create-abs-mixed-host?case=${case_id}-mixed-${method_slug}" \
+        "/location-target?case=${case_id}-mixed-${method_slug}" \
+        "Location" \
+        "http://LocalHost:8091/location-target?case=${case_id}-mixed-${method_slug}" \
+        201
+done
+
+echo "Testing uppercase Location host invalidation on POST..."
+run_referenced_invalidation_case \
+    upper-post \
+    POST \
+    "/create-abs-upper-host?case=${case_id}-upper" \
+    "/location-target?case=${case_id}-upper" \
+    "Location" \
+    "http://LOCALHOST:8091/location-target?case=${case_id}-upper" \
+    201
+
+echo "Testing mixed-case Content-Location host invalidation on PUT..."
+run_referenced_invalidation_case \
+    content-loc-mixed-put \
+    PUT \
+    "/create-content-location-abs-mixed?case=${case_id}-cl-mixed" \
+    "/content-location-target?case=${case_id}-cl-mixed" \
+    "Content-Location" \
+    "http://LocalHost:8091/content-location-target?case=${case_id}-cl-mixed" \
+    200
+
+echo "Testing mixed-case cross-host Location does not invalidate same-host cache..."
+cross_mixed_target="/location-target?case=${case_id}-cross-mixed"
+http_request cross-mixed-first "${base_url}${cross_mixed_target}"
+assert_http_status cross-mixed-first 200 "first GET of mixed-case cross-host target"
+assert_cache_state cross-mixed-first MISS "first GET of mixed-case cross-host target"
+cross_mixed_id="$(assert_origin_request_id_present cross-mixed-first "first GET of mixed-case cross-host target")"
+
+http_request cross-mixed-second "${base_url}${cross_mixed_target}"
+assert_cache_state cross-mixed-second HIT "second GET of mixed-case cross-host target"
+assert_same_origin_request_id cross-mixed-second "$cross_mixed_id" "second GET of mixed-case cross-host target"
+
+http_request cross-mixed-mutation "${base_url}/create-cross-host-mixed?case=${case_id}-cross-mixed" -X POST
+assert_http_status cross-mixed-mutation 201 "mixed-case cross-host POST mutation"
+assert_header_contains \
+    cross-mixed-mutation \
+    Location \
+    "http://Other.Example.Test:9999/location-target?case=${case_id}-cross-mixed" \
+    "mixed-case cross-host POST mutation"
+
+http_request cross-mixed-after "${base_url}${cross_mixed_target}"
+assert_cache_state cross-mixed-after HIT "GET mixed-case cross-host target after mixed-case cross-host POST"
+assert_same_origin_request_id cross-mixed-after "$cross_mixed_id" "GET mixed-case cross-host target after mixed-case cross-host POST"
+echo "OK: mixed-case cross-host Location did not invalidate the same-host cached object"

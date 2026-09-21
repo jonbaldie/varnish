@@ -70,6 +70,15 @@ def parse_auth_identity(auth_header: str | None) -> str:
     return auth_header.strip()
 
 
+def mixed_case_host(host: str) -> str:
+    hostname, sep, port = host.partition(":")
+    if hostname.lower() == "localhost":
+        hostname = "LocalHost"
+    elif hostname:
+        hostname = hostname[0].upper() + hostname[1:]
+    return hostname + sep + port
+
+
 class Handler(BaseHTTPRequestHandler):
     """HTTP request handler implementing the hostile backend test contract.
     
@@ -175,24 +184,60 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in (
             "/create-rel",
             "/create-abs",
+            "/create-abs-mixed-host",
+            "/create-abs-upper-host",
             "/create-cross-host",
+            "/create-cross-host-mixed",
             "/create-content-location",
+            "/create-content-location-abs-mixed",
         ):
             if self.command in ("POST", "PUT", "DELETE", "PATCH"):
                 query = self.path.split("?", 1)[1] if "?" in self.path else ""
                 suffix = f"?{query}" if query else ""
+                host = self.headers.get("Host") or "localhost"
                 if clean_path == "/create-rel":
                     extra = {"Location": f"/location-target{suffix}"}
                     self.respond(201, "route=create-rel\n", extra_headers=extra)
                 elif clean_path == "/create-abs":
-                    host = self.headers.get("Host") or "localhost"
                     extra = {"Location": f"http://{host}/location-target{suffix}"}
                     self.respond(201, "route=create-abs\n", extra_headers=extra)
+                elif clean_path == "/create-abs-mixed-host":
+                    extra = {
+                        "Location": f"http://{mixed_case_host(host)}/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-abs-mixed-host\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-abs-upper-host":
+                    extra = {
+                        "Location": f"http://{host.upper()}/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-abs-upper-host\n", extra_headers=extra
+                    )
                 elif clean_path == "/create-cross-host":
                     extra = {
                         "Location": f"http://other.example.test:9999/location-target{suffix}"
                     }
                     self.respond(201, "route=create-cross-host\n", extra_headers=extra)
+                elif clean_path == "/create-cross-host-mixed":
+                    extra = {
+                        "Location": f"http://Other.Example.Test:9999/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-cross-host-mixed\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-content-location-abs-mixed":
+                    extra = {
+                        "Content-Location": (
+                            f"http://{mixed_case_host(host)}/content-location-target{suffix}"
+                        )
+                    }
+                    self.respond(
+                        200,
+                        "route=create-content-location-abs-mixed\n",
+                        extra_headers=extra,
+                    )
                 else:
                     extra = {
                         "Content-Location": f"/content-location-target{suffix}"
