@@ -184,6 +184,9 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in (
             "/create-rel",
             "/create-abs",
+            "/create-abs-default-port",
+            "/create-abs-empty-port",
+            "/create-https-default-port",
             "/create-abs-mixed-host",
             "/create-abs-upper-host",
             "/create-cross-host",
@@ -202,6 +205,27 @@ class Handler(BaseHTTPRequestHandler):
                 elif clean_path == "/create-abs":
                     extra = {"Location": f"http://{host}/location-target{suffix}"}
                     self.respond(201, "route=create-abs\n", extra_headers=extra)
+                elif clean_path == "/create-abs-default-port":
+                    extra = {
+                        "Location": f"http://localhost:080/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-abs-default-port\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-abs-empty-port":
+                    extra = {
+                        "Location": f"http://localhost:/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-abs-empty-port\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-https-default-port":
+                    extra = {
+                        "Location": f"https://localhost:0443/location-target{suffix}"
+                    }
+                    self.respond(
+                        201, "route=create-https-default-port\n", extra_headers=extra
+                    )
                 elif clean_path == "/create-abs-mixed-host":
                     extra = {
                         "Location": f"http://{mixed_case_host(host)}/location-target{suffix}"
