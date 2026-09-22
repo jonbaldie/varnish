@@ -190,6 +190,7 @@ class Handler(BaseHTTPRequestHandler):
             "/create-cross-host-mixed",
             "/create-content-location",
             "/create-content-location-abs-mixed",
+            "/create-content-location-abs-upper-host",
         ):
             if self.command in ("POST", "PUT", "DELETE", "PATCH"):
                 query = self.path.split("?", 1)[1] if "?" in self.path else ""
@@ -236,6 +237,17 @@ class Handler(BaseHTTPRequestHandler):
                     self.respond(
                         200,
                         "route=create-content-location-abs-mixed\n",
+                        extra_headers=extra,
+                    )
+                elif clean_path == "/create-content-location-abs-upper-host":
+                    extra = {
+                        "Content-Location": (
+                            f"http://{host.upper()}/content-location-target{suffix}"
+                        )
+                    }
+                    self.respond(
+                        200,
+                        "route=create-content-location-abs-upper-host\n",
                         extra_headers=extra,
                     )
                 else:
