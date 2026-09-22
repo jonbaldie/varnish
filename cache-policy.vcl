@@ -22,11 +22,12 @@ sub vcl_recv {
         set req.http.host = req.http.host.lower();
     }
 
-    # The default HTTP port is equivalent to an omitted port (RFC 9110
-    # sections 4.2.3 and 7.2). Normalize it before cache lookup and mutation
-    # invalidation so both Host forms share one cache identity.
+    # The HTTP default port is equivalent to an omitted port (RFC 9110
+    # sections 4.2.3 and 7.2). Treat zero-padded and empty port spellings the
+    # same way before cache lookup and mutation invalidation.
     if (req.http.host) {
-        set req.http.host = regsub(req.http.host, ":80$", "");
+        set req.http.host = regsub(req.http.host, ":0*80$", "");
+        set req.http.host = regsub(req.http.host, ":$", "");
     }
 
     if (req.method == "PURGE") {
@@ -104,18 +105,22 @@ sub vcl_backend_fetch {
 sub invalidate_reference {
     if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
         # Absolute reference: the authority is the cache host identity
-        # (default ports are equivalent to an omitted port), and the path
-        # with query, minus any fragment, is the cache URL identity.
+        # (including empty and zero-padded spellings), and the path with
+        # query, minus any fragment, is the cache URL identity.
         set beresp.http.X-Varnish-Cache-Ref-Host =
             regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://", "");
         set beresp.http.X-Varnish-Cache-Ref-Host =
             regsub(beresp.http.X-Varnish-Cache-Ref-Host, "[/?#].*$", "");
         if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https://") {
             set beresp.http.X-Varnish-Cache-Ref-Host =
-                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":443$", "");
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":0*443$", "");
+            set beresp.http.X-Varnish-Cache-Ref-Host =
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":$", "");
         } else {
             set beresp.http.X-Varnish-Cache-Ref-Host =
-                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":80$", "");
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":0*80$", "");
+            set beresp.http.X-Varnish-Cache-Ref-Host =
+                regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":$", "");
         }
         set beresp.http.X-Varnish-Cache-Ref-URL =
             regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://[^/?#]+", "");

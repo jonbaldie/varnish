@@ -51,6 +51,44 @@ run_referenced_invalidation_case() {
     echo "OK: successful ${method} invalidated the ${ref_header} referenced URI"
 }
 
+run_variant_port_invalidation_case() {
+    local prefix="$1"
+    local create_path="$2"
+    local variant_host="$3"
+    local variant_scheme="$4"
+    local case_suffix="$5"
+    local target_path="/location-target?case=${case_id}-${case_suffix}"
+    local first_id
+
+    http_request "${prefix}-first" "${base_url}${target_path}" -H "Host: localhost"
+    assert_http_status "${prefix}-first" 200 "first GET of ${prefix} target"
+    assert_cache_state "${prefix}-first" MISS "first GET of ${prefix} target"
+    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET of ${prefix} target")"
+
+    http_request "${prefix}-second" "${base_url}${target_path}" -H "Host: localhost"
+    assert_http_status "${prefix}-second" 200 "second GET of ${prefix} target"
+    assert_cache_state "${prefix}-second" HIT "second GET of ${prefix} target"
+    assert_same_origin_request_id "${prefix}-second" "$first_id" "second GET of ${prefix} target"
+
+    http_request "${prefix}-mutation" \
+        "${base_url}/${create_path}?case=${case_id}-${case_suffix}" \
+        -X POST -H "Host: localhost"
+    assert_http_status "${prefix}-mutation" 201 "POST ${prefix} mutation"
+    assert_header_contains \
+        "${prefix}-mutation" \
+        Location \
+        "${variant_scheme}://${variant_host}/location-target?case=${case_id}-${case_suffix}" \
+        "POST ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "POST ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "POST ${prefix} mutation"
+
+    http_request "${prefix}-after" "${base_url}${target_path}" -H "Host: localhost"
+    assert_http_status "${prefix}-after" 200 "GET ${prefix} target after POST"
+    assert_cache_state "${prefix}-after" MISS "GET ${prefix} target after POST"
+    assert_different_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after POST"
+    echo "OK: ${variant_host} Location invalidated the bare-host target"
+}
+
 case_id="$(openssl rand -hex 4)"
 
 echo "Testing relative Location invalidation for every unsafe method..."
@@ -75,6 +113,26 @@ run_referenced_invalidation_case \
     "Location" \
     "http://localhost:8091/location-target?case=${case_id}-abs" \
     201
+
+echo "Testing default-port variant Location invalidation..."
+run_variant_port_invalidation_case \
+    variant-leading-zero \
+    create-abs-default-port \
+    "localhost:080" \
+    http \
+    variant-leading-zero
+run_variant_port_invalidation_case \
+    variant-empty \
+    create-abs-empty-port \
+    "localhost:" \
+    http \
+    variant-empty
+run_variant_port_invalidation_case \
+    variant-https-leading-zero \
+    create-https-default-port \
+    "localhost:0443" \
+    https \
+    variant-https-leading-zero
 
 echo "Testing Content-Location invalidation on PUT..."
 run_referenced_invalidation_case \

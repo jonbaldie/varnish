@@ -144,5 +144,52 @@ if "HIT" not in xcache_lower:
     sys.exit(1)
 print("   OK: Uppercase and lowercase Host headers share cache entry (X-Cache: HIT)")
 
+# Test 6: default-port Host variants share one cache entry
+identity_path = f"/?host_default_port_test={nonce}"
+identity_hosts = ["example.com:080", "example.com:0080", "example.com:", "example.com", "example.com:80"]
+identity_states = []
+print(f"6. Testing default-port Host cache sharing on {identity_path}...")
+for host_header in identity_hosts:
+    response = send_request(
+        f"GET {identity_path} HTTP/1.1\r\nHost: {host_header}\r\nConnection: close\r\n\r\n".encode()
+    )
+    code, hdrs, _ = parse_response(response)
+    state = hdrs.get("x-cache", "")
+    identity_states.append(state)
+    print(f"   Host: {host_header}: status {code}, X-Cache: {state}")
+    if code != 200:
+        print(f"FAIL: Expected HTTP 200 for Host {host_header}, got {code}")
+        sys.exit(1)
+
+if identity_states[0] != "MISS" or any(state != "HIT" for state in identity_states[1:]):
+    print(
+        "FAIL: Expected :080, :0080, empty, omitted, and :80 Host forms "
+        f"to share one cache entry, got {identity_states}"
+    )
+    sys.exit(1)
+print("   OK: default-port Host variants share one cache entry")
+
+# Non-default and zero ports must remain separate from the omitted form.
+for label, variant in (("non-default", "example.com:8080"), ("zero", "example.com:0")):
+    control_path = f"/?host_port_control_{label}={nonce}"
+    first = send_request(
+        f"GET {control_path} HTTP/1.1\r\nHost: {variant}\r\nConnection: close\r\n\r\n".encode()
+    )
+    first_code, first_hdrs, _ = parse_response(first)
+    second = send_request(
+        f"GET {control_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode()
+    )
+    second_code, second_hdrs, _ = parse_response(second)
+    first_state = first_hdrs.get("x-cache", "")
+    second_state = second_hdrs.get("x-cache", "")
+    print(
+        f"   Control Host {variant} then example.com: "
+        f"statuses {first_code}/{second_code}, X-Cache {first_state}/{second_state}"
+    )
+    if first_code != 200 or second_code != 200 or first_state != "MISS" or second_state != "MISS":
+        print(f"FAIL: Host {variant} must remain distinct from the omitted port")
+        sys.exit(1)
+print("   OK: non-default and zero ports remain distinct cache identities")
+
 print("=== ALL HOST HEADER ASSERTIONS PASSED ===")
 EOF
