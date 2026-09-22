@@ -133,6 +133,16 @@ run_referenced_invalidation_case \
     "http://LOCALHOST:8091/location-target?case=${case_id}-upper" \
     201
 
+echo "Testing uppercase Content-Location host invalidation on PUT..."
+run_referenced_invalidation_case \
+    content-loc-upper-put \
+    PUT \
+    "/create-content-location-abs-upper-host?case=${case_id}-cl-upper" \
+    "/content-location-target?case=${case_id}-cl-upper" \
+    "Content-Location" \
+    "http://LOCALHOST:8091/content-location-target?case=${case_id}-cl-upper" \
+    200
+
 echo "Testing mixed-case Content-Location host invalidation on PUT..."
 run_referenced_invalidation_case \
     content-loc-mixed-put \

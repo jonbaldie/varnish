@@ -141,7 +141,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 | `GET /account` | Dynamic pass-through; must echo caller identity from `Cookie` |
 | `GET /set-cookie` | Must return `Set-Cookie`; must not be shared across clients |
 | `GET /location-target`, `GET /content-location-target` | Cacheable targets referenced by unsafe-method responses (RFC 9111 §4.4) |
-| unsafe `/create-rel`, `/create-abs`, `/create-abs-mixed-host`, `/create-abs-upper-host`, `/create-cross-host`, `/create-cross-host-mixed`, `/create-content-location`, `/create-content-location-abs-mixed` | Must return `Location`/`Content-Location` referencing the targets above, including mixed-case and uppercase same-host and cross-host forms |
+| unsafe `/create-rel`, `/create-abs`, `/create-abs-mixed-host`, `/create-abs-upper-host`, `/create-cross-host`, `/create-cross-host-mixed`, `/create-content-location`, `/create-content-location-abs-mixed`, `/create-content-location-abs-upper-host` | Must return `Location`/`Content-Location` referencing the targets above, including mixed-case and uppercase same-host and cross-host forms |
 
 **Every response must include:**
 - `X-Backend: hostile` — proves the backend handled the request.
