@@ -46,13 +46,8 @@ run_rejected_mutation_case() {
     local case_url="$4"
     local first_id
 
-    http_request "${prefix}-first" "$case_url"
-    assert_cache_state "${prefix}-first" MISS "first GET before rejected ${method} (${expected_status})"
-    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET before rejected ${method} (${expected_status})")"
-
-    http_request "${prefix}-second" "$case_url"
-    assert_cache_state "${prefix}-second" HIT "second GET before rejected ${method} (${expected_status})"
-    assert_same_origin_request_id "${prefix}-second" "$first_id" "second GET before rejected ${method} (${expected_status})"
+    assert_cached_after_warm "${prefix}" "$case_url"
+    first_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
     http_request "${prefix}-mutation" "$case_url" -X "$method"
     assert_http_status "${prefix}-mutation" "$expected_status" "rejected ${method} mutation (${expected_status})"

@@ -268,23 +268,16 @@ _request_with_header_spec() {
         return
     fi
 
-    local -a header_args=()
-    local line
-    while IFS= read -r line || [ -n "$line" ]; do
-        [ -z "$line" ] && continue
-        if [[ "$line" =~ ^-H[[:space:]]+(.*)$ ]]; then
-            local val="${BASH_REMATCH[1]}"
-            val="${val#\'}"
-            val="${val%\'}"
-            val="${val#\"}"
-            val="${val%\"}"
-            header_args+=(-H "$val")
-        else
-            header_args+=(-H "$line")
-        fi
-    done <<<"$header_spec"
+    local header="$header_spec"
+    if [[ "$header" =~ ^-H[[:space:]]+(.*)$ ]]; then
+        header="${BASH_REMATCH[1]}"
+    fi
+    header="${header#\'}"
+    header="${header%\'}"
+    header="${header#\"}"
+    header="${header%\"}"
 
-    http_request "$name" "$url" ${header_args[@]+"${header_args[@]}"}
+    http_request "$name" "$url" -H "$header"
 }
 
 _is_http_mutation_method() {
@@ -295,34 +288,9 @@ _is_http_mutation_method() {
 }
 
 assert_cached_after_warm() {
-    local prefix
-    local url
-    local context_label=""
-
-    if [[ "$1" =~ ^https?:// ]]; then
-        url="$1"
-        prefix="warm-$(openssl rand -hex 4)"
-        shift 1
-    else
-        prefix="$1"
-        url="$2"
-        shift 2
-    fi
-
-    if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
-        context_label="$1"
-        shift 1
-    fi
-
-    local first_context
-    local second_context
-    if [ -n "$context_label" ]; then
-        first_context="first ${context_label} request"
-        second_context="second ${context_label} request"
-    else
-        first_context="first GET of ${prefix} target"
-        second_context="second GET of ${prefix} target"
-    fi
+    local prefix="$1"
+    local url="$2"
+    shift 2
 
     local first_name="${prefix}-first"
     local second_name="${prefix}-second"
@@ -333,52 +301,35 @@ assert_cached_after_warm() {
     fi
 
     http_request "$first_name" "$url" ${curl_args[@]+"${curl_args[@]}"}
-    assert_http_status "$first_name" 200 "$first_context"
-    assert_cache_state "$first_name" MISS "$first_context"
+    assert_http_status "$first_name" 200 "first GET of ${prefix} target"
+    assert_cache_state "$first_name" MISS "first GET of ${prefix} target"
     local first_id
-    first_id="$(assert_origin_request_id_present "$first_name" "$first_context")"
+    first_id="$(assert_origin_request_id_present "$first_name" "first GET of ${prefix} target")"
 
     http_request "$second_name" "$url" ${curl_args[@]+"${curl_args[@]}"}
-    assert_http_status "$second_name" 200 "$second_context"
-    assert_cache_state "$second_name" HIT "$second_context"
-    assert_same_origin_request_id "$second_name" "$first_id" "$second_context"
+    assert_http_status "$second_name" 200 "second GET of ${prefix} target"
+    assert_cache_state "$second_name" HIT "second GET of ${prefix} target"
+    assert_same_origin_request_id "$second_name" "$first_id" "second GET of ${prefix} target"
 
     export ASSERT_LAST_WARMED_ORIGIN_ID="$first_id"
     echo "OK: ${url} cached after warm request"
 }
 
 assert_mutation_invalidates() {
-    local prefix
-    local target_url
+    local prefix="$1"
+    local target_url="$2"
+    shift 2
+
     local mutation_url
     local method
-
-    if [[ "$1" =~ ^https?:// ]]; then
-        target_url="$1"
-        prefix="mutation-$(openssl rand -hex 4)"
+    if _is_http_mutation_method "$1"; then
+        mutation_url="$target_url"
+        method="$1"
         shift 1
-        if _is_http_mutation_method "$1"; then
-            mutation_url="$target_url"
-            method="$1"
-            shift 1
-        else
-            mutation_url="$1"
-            method="$2"
-            shift 2
-        fi
     else
-        prefix="$1"
-        target_url="$2"
+        mutation_url="$1"
+        method="$2"
         shift 2
-        if _is_http_mutation_method "$1"; then
-            mutation_url="$target_url"
-            method="$1"
-            shift 1
-        else
-            mutation_url="$1"
-            method="$2"
-            shift 2
-        fi
     fi
 
     local -a mutation_args=()
@@ -415,22 +366,10 @@ assert_mutation_invalidates() {
 }
 
 assert_client_isolated() {
-    local prefix
-    local url
-    local client_a_spec
-    local client_b_spec
-
-    if [[ "$1" =~ ^https?:// ]]; then
-        url="$1"
-        client_a_spec="$2"
-        client_b_spec="$3"
-        prefix="client-iso-$(openssl rand -hex 4)"
-    else
-        prefix="$1"
-        url="$2"
-        client_a_spec="$3"
-        client_b_spec="$4"
-    fi
+    local prefix="$1"
+    local url="$2"
+    local client_a_spec="$3"
+    local client_b_spec="$4"
 
     local client_a_name="${prefix}-client-a"
     local client_b_name="${prefix}-client-b"
@@ -445,11 +384,6 @@ assert_client_isolated() {
     assert_http_status "$client_b_name" 200 "Client B request for ${url}"
     assert_cache_state "$client_b_name" MISS "Client B request for ${url}"
     assert_different_origin_request_id "$client_b_name" "$client_a_id" "Client B request for ${url}"
-
-    export ASSERT_CLIENT_A_ORIGIN_ID="$client_a_id"
-    local client_b_id
-    client_b_id="$(assert_origin_request_id_present "$client_b_name" "Client B request for ${url}")"
-    export ASSERT_CLIENT_B_ORIGIN_ID="$client_b_id"
 
     echo "OK: Client B remained isolated from Client A at ${url}"
 }
