@@ -10,23 +10,15 @@ echo "Purging any existing cached set-cookie response..."
 http_request purge-set-cookie "$url" -X PURGE
 assert_http_status purge-set-cookie 200 "set-cookie PURGE"
 
-echo "Requesting /set-cookie as alice..."
-http_request set-cookie-alice "$url" -H 'Cookie: client=alice'
-assert_cache_state set-cookie-alice MISS "alice set-cookie request"
-assert_body_field_equals set-cookie-alice route set-cookie "alice set-cookie request"
-assert_body_field_equals set-cookie-alice client alice "alice set-cookie request"
-assert_header_contains set-cookie-alice Set-Cookie "session=alice; Path=/" "alice set-cookie request"
-alice_request_id="$(assert_origin_request_id_present set-cookie-alice "alice set-cookie request")"
-echo "OK: Alice response stayed client-specific with Set-Cookie"
-
-echo "Requesting /set-cookie as bob..."
-http_request set-cookie-bob "$url" -H 'Cookie: client=bob'
-assert_cache_state set-cookie-bob MISS "bob set-cookie request"
-assert_body_field_equals set-cookie-bob route set-cookie "bob set-cookie request"
-assert_body_field_equals set-cookie-bob client bob "bob set-cookie request"
-assert_header_contains set-cookie-bob Set-Cookie "session=bob; Path=/" "bob set-cookie request"
-assert_header_missing_or_not_contains set-cookie-bob Set-Cookie "session=alice; Path=/" "bob set-cookie request"
-assert_different_origin_request_id set-cookie-bob "$alice_request_id" "bob set-cookie request"
+echo "Requesting /set-cookie as alice and bob (assert client isolation)..."
+assert_client_isolated set-cookie "$url" 'Cookie: client=alice' 'Cookie: client=bob'
+assert_body_field_equals set-cookie-client-a route set-cookie "alice set-cookie request"
+assert_body_field_equals set-cookie-client-a client alice "alice set-cookie request"
+assert_header_contains set-cookie-client-a Set-Cookie "session=alice; Path=/" "alice set-cookie request"
+assert_body_field_equals set-cookie-client-b route set-cookie "bob set-cookie request"
+assert_body_field_equals set-cookie-client-b client bob "bob set-cookie request"
+assert_header_contains set-cookie-client-b Set-Cookie "session=bob; Path=/" "bob set-cookie request"
+assert_header_missing_or_not_contains set-cookie-client-b Set-Cookie "session=alice; Path=/" "bob set-cookie request"
 echo "OK: Bob response stayed uncached and isolated from alice's Set-Cookie response"
 
 echo "Requesting /set-cookie as first unauthenticated visitor..."

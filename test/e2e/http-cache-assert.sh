@@ -257,3 +257,200 @@ assert_different_origin_request_id() {
       "$name"
   fi
 }
+
+_request_with_header_spec() {
+    local name="$1"
+    local url="$2"
+    local header_spec="$3"
+
+    if [ -z "$header_spec" ]; then
+        http_request "$name" "$url"
+        return
+    fi
+
+    local -a header_args=()
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -z "$line" ] && continue
+        if [[ "$line" =~ ^-H[[:space:]]+(.*)$ ]]; then
+            local val="${BASH_REMATCH[1]}"
+            val="${val#\'}"
+            val="${val%\'}"
+            val="${val#\"}"
+            val="${val%\"}"
+            header_args+=(-H "$val")
+        else
+            header_args+=(-H "$line")
+        fi
+    done <<<"$header_spec"
+
+    http_request "$name" "$url" ${header_args[@]+"${header_args[@]}"}
+}
+
+_is_http_mutation_method() {
+    case "$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')" in
+        POST|PUT|DELETE|PATCH) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+assert_cached_after_warm() {
+    local prefix
+    local url
+    local context_label=""
+
+    if [[ "$1" =~ ^https?:// ]]; then
+        url="$1"
+        prefix="warm-$(openssl rand -hex 4)"
+        shift 1
+    else
+        prefix="$1"
+        url="$2"
+        shift 2
+    fi
+
+    if [ "$#" -gt 0 ] && [[ "$1" != -* ]]; then
+        context_label="$1"
+        shift 1
+    fi
+
+    local first_context
+    local second_context
+    if [ -n "$context_label" ]; then
+        first_context="first ${context_label} request"
+        second_context="second ${context_label} request"
+    else
+        first_context="first GET of ${prefix} target"
+        second_context="second GET of ${prefix} target"
+    fi
+
+    local first_name="${prefix}-first"
+    local second_name="${prefix}-second"
+
+    local -a curl_args=()
+    if [ "$#" -gt 0 ]; then
+        curl_args=("$@")
+    fi
+
+    http_request "$first_name" "$url" ${curl_args[@]+"${curl_args[@]}"}
+    assert_http_status "$first_name" 200 "$first_context"
+    assert_cache_state "$first_name" MISS "$first_context"
+    local first_id
+    first_id="$(assert_origin_request_id_present "$first_name" "$first_context")"
+
+    http_request "$second_name" "$url" ${curl_args[@]+"${curl_args[@]}"}
+    assert_http_status "$second_name" 200 "$second_context"
+    assert_cache_state "$second_name" HIT "$second_context"
+    assert_same_origin_request_id "$second_name" "$first_id" "$second_context"
+
+    export ASSERT_LAST_WARMED_ORIGIN_ID="$first_id"
+    echo "OK: ${url} cached after warm request"
+}
+
+assert_mutation_invalidates() {
+    local prefix
+    local target_url
+    local mutation_url
+    local method
+
+    if [[ "$1" =~ ^https?:// ]]; then
+        target_url="$1"
+        prefix="mutation-$(openssl rand -hex 4)"
+        shift 1
+        if _is_http_mutation_method "$1"; then
+            mutation_url="$target_url"
+            method="$1"
+            shift 1
+        else
+            mutation_url="$1"
+            method="$2"
+            shift 2
+        fi
+    else
+        prefix="$1"
+        target_url="$2"
+        shift 2
+        if _is_http_mutation_method "$1"; then
+            mutation_url="$target_url"
+            method="$1"
+            shift 1
+        else
+            mutation_url="$1"
+            method="$2"
+            shift 2
+        fi
+    fi
+
+    local -a mutation_args=()
+    if [ "$#" -gt 0 ]; then
+        mutation_args=("$@")
+    fi
+
+    assert_cached_after_warm "$prefix" "$target_url"
+    local warmed_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
+
+    local mutation_name="${prefix}-mutation"
+    http_request "$mutation_name" "$mutation_url" -X "$method" ${mutation_args[@]+"${mutation_args[@]}"}
+
+    local mutation_status
+    mutation_status="$(response_status_code "$mutation_name")"
+    if [ -z "$mutation_status" ] || [ "$mutation_status" -ge 400 ]; then
+        fail_response_assertion \
+            "expected successful ${method} mutation (< 400), got ${mutation_status:-missing}" \
+            "$mutation_name"
+    fi
+
+    if [ "$mutation_url" = "$target_url" ]; then
+        assert_cache_state "$mutation_name" MISS "successful ${method} mutation"
+        assert_different_origin_request_id "$mutation_name" "$warmed_id" "successful ${method} mutation"
+    fi
+
+    local after_name="${prefix}-after"
+    http_request "$after_name" "$target_url"
+    assert_http_status "$after_name" 200 "GET ${prefix} target after ${method}"
+    assert_cache_state "$after_name" MISS "GET ${prefix} target after ${method}"
+    assert_different_origin_request_id "$after_name" "$warmed_id" "GET ${prefix} target after ${method}"
+
+    echo "OK: successful ${method} invalidated the cached object"
+}
+
+assert_client_isolated() {
+    local prefix
+    local url
+    local client_a_spec
+    local client_b_spec
+
+    if [[ "$1" =~ ^https?:// ]]; then
+        url="$1"
+        client_a_spec="$2"
+        client_b_spec="$3"
+        prefix="client-iso-$(openssl rand -hex 4)"
+    else
+        prefix="$1"
+        url="$2"
+        client_a_spec="$3"
+        client_b_spec="$4"
+    fi
+
+    local client_a_name="${prefix}-client-a"
+    local client_b_name="${prefix}-client-b"
+
+    _request_with_header_spec "$client_a_name" "$url" "$client_a_spec"
+    assert_http_status "$client_a_name" 200 "Client A request for ${url}"
+    assert_cache_state "$client_a_name" MISS "Client A request for ${url}"
+    local client_a_id
+    client_a_id="$(assert_origin_request_id_present "$client_a_name" "Client A request for ${url}")"
+
+    _request_with_header_spec "$client_b_name" "$url" "$client_b_spec"
+    assert_http_status "$client_b_name" 200 "Client B request for ${url}"
+    assert_cache_state "$client_b_name" MISS "Client B request for ${url}"
+    assert_different_origin_request_id "$client_b_name" "$client_a_id" "Client B request for ${url}"
+
+    export ASSERT_CLIENT_A_ORIGIN_ID="$client_a_id"
+    local client_b_id
+    client_b_id="$(assert_origin_request_id_present "$client_b_name" "Client B request for ${url}")"
+    export ASSERT_CLIENT_B_ORIGIN_ID="$client_b_id"
+
+    echo "OK: Client B remained isolated from Client A at ${url}"
+}
+
