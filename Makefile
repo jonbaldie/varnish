@@ -727,7 +727,7 @@ test-hostile-unsafe-location-canary:
 		cat "$$log_file"; \
 		exit 1; \
 	fi; \
-	if ! grep -Eq "rel-post target after POST cache miss, got" "$$log_file"; then \
+	if ! grep -Eq "(abs-query-post|rel-post) target after POST cache miss, got" "$$log_file"; then \
 		echo "FAIL: hostile unsafe-location canary should fail with semantic cache-domain assertion"; \
 		cat "$$log_file"; \
 		exit 1; \
