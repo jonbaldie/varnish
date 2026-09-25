@@ -184,6 +184,8 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in (
             "/create-rel",
             "/create-abs",
+            "/create-abs-query",
+            "/create-authority-only",
             "/create-abs-default-port",
             "/create-abs-empty-port",
             "/create-https-default-port",
@@ -192,6 +194,7 @@ class Handler(BaseHTTPRequestHandler):
             "/create-cross-host",
             "/create-cross-host-mixed",
             "/create-content-location",
+            "/create-content-location-abs-query",
             "/create-content-location-abs-mixed",
             "/create-content-location-abs-upper-host",
         ):
@@ -205,6 +208,14 @@ class Handler(BaseHTTPRequestHandler):
                 elif clean_path == "/create-abs":
                     extra = {"Location": f"http://{host}/location-target{suffix}"}
                     self.respond(201, "route=create-abs\n", extra_headers=extra)
+                elif clean_path == "/create-abs-query":
+                    extra = {"Location": f"http://{host}{suffix}"}
+                    self.respond(201, "route=create-abs-query\n", extra_headers=extra)
+                elif clean_path == "/create-authority-only":
+                    extra = {"Location": f"http://{host}"}
+                    self.respond(
+                        201, "route=create-authority-only\n", extra_headers=extra
+                    )
                 elif clean_path == "/create-abs-default-port":
                     extra = {
                         "Location": f"http://localhost:080/location-target{suffix}"
@@ -261,6 +272,13 @@ class Handler(BaseHTTPRequestHandler):
                     self.respond(
                         200,
                         "route=create-content-location-abs-mixed\n",
+                        extra_headers=extra,
+                    )
+                elif clean_path == "/create-content-location-abs-query":
+                    extra = {"Content-Location": f"http://{host}{suffix}"}
+                    self.respond(
+                        200,
+                        "route=create-content-location-abs-query\n",
                         extra_headers=extra,
                     )
                 elif clean_path == "/create-content-location-abs-upper-host":

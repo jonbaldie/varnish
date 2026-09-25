@@ -126,10 +126,12 @@ sub invalidate_reference {
             regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://[^/?#]+", "");
         set beresp.http.X-Varnish-Cache-Ref-URL =
             regsub(beresp.http.X-Varnish-Cache-Ref-URL, "#.*$", "");
-        # An authority-only reference has an empty path; the effective
-        # request URI is "/".
+        # An authority-only reference has an empty path; an empty-path
+        # reference with a query uses "/" as its effective path. Prefix the
+        # slash so either form keeps any query in the cache URL identity.
         if (beresp.http.X-Varnish-Cache-Ref-URL !~ "^/") {
-            set beresp.http.X-Varnish-Cache-Ref-URL = "/";
+            set beresp.http.X-Varnish-Cache-Ref-URL =
+                "/" + beresp.http.X-Varnish-Cache-Ref-URL;
         }
         set beresp.http.X-Varnish-Cache-Ref-Host =
             std.tolower(beresp.http.X-Varnish-Cache-Ref-Host);

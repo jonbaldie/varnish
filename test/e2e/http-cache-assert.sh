@@ -86,16 +86,33 @@ http_request() {
         docker run --rm \
             --network "container:$varnish_container" \
             --volume "${TEST_TMPDIR:?TEST_TMPDIR must be set}:/test-tmp" \
-            alpine \
-            sh -c '
-                apk add -q curl
-                curl -sS --max-time 10 \
-                    -D "/test-tmp/$1.headers" \
-                    -o "/test-tmp/$1.body" \
-                    -X PURGE \
-                    -H "Host: $3" \
-                    "$2"
-            ' sh "$name" "$loopback_url" "$host_header"
+            python:3.13-alpine \
+            python -c '
+import http.client
+import sys
+from urllib.parse import urlsplit
+
+name, url, host_header = sys.argv[1:]
+target = urlsplit(url)
+path = target.path or "/"
+if target.query:
+    path += "?" + target.query
+
+connection = http.client.HTTPConnection(target.hostname, target.port, timeout=10)
+connection.request("PURGE", path, headers={"Host": host_header})
+response = connection.getresponse()
+
+with open(f"/test-tmp/{name}.headers", "w", encoding="utf-8") as headers_file:
+    headers_file.write(f"HTTP/1.1 {response.status} {response.reason}" + chr(13) + chr(10))
+    for header, value in response.getheaders():
+        headers_file.write(f"{header}: {value}" + chr(13) + chr(10))
+    headers_file.write(chr(13) + chr(10))
+
+with open(f"/test-tmp/{name}.body", "wb") as body_file:
+    body_file.write(response.read())
+
+connection.close()
+' "$name" "$loopback_url" "$host_header"
         return
     fi
 

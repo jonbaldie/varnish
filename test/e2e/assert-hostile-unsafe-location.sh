@@ -51,6 +51,65 @@ run_referenced_invalidation_case() {
     echo "OK: successful ${method} invalidated the ${ref_header} referenced URI"
 }
 
+run_empty_path_query_invalidation_case() {
+    local prefix="$1"
+    local method="$2"
+    local create_path="$3"
+    local ref_header="$4"
+    local expected_status="$5"
+    local target_path="/?case=${case_id}-${prefix}"
+    local cache_host="${prefix}-${case_id}.example.test:8091"
+    local root_id
+    local target_id
+    local expected_ref="http://${cache_host}?case=${case_id}-${prefix}"
+
+    http_request "${prefix}-root-first" "${base_url}/" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-root-first" 200 "first GET of root for ${prefix}"
+    assert_cache_state "${prefix}-root-first" MISS "first GET of root for ${prefix}"
+    root_id="$(assert_origin_request_id_present "${prefix}-root-first" "first GET of root for ${prefix}")"
+
+    http_request "${prefix}-root-second" "${base_url}/" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-root-second" 200 "second GET of root for ${prefix}"
+    assert_cache_state "${prefix}-root-second" HIT "second GET of root for ${prefix}"
+    assert_same_origin_request_id "${prefix}-root-second" "$root_id" "second GET of root for ${prefix}"
+
+    http_request "${prefix}-target-first" "${base_url}${target_path}" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-target-first" 200 "first GET of ${prefix} target"
+    assert_cache_state "${prefix}-target-first" MISS "first GET of ${prefix} target"
+    target_id="$(assert_origin_request_id_present "${prefix}-target-first" "first GET of ${prefix} target")"
+
+    http_request "${prefix}-target-second" "${base_url}${target_path}" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-target-second" 200 "second GET of ${prefix} target"
+    assert_cache_state "${prefix}-target-second" HIT "second GET of ${prefix} target"
+    assert_same_origin_request_id "${prefix}-target-second" "$target_id" "second GET of ${prefix} target"
+
+    http_request "${prefix}-mutation" \
+        "${base_url}${create_path}?case=${case_id}-${prefix}" \
+        -X "$method" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-mutation" "$expected_status" "${method} ${prefix} mutation"
+    assert_header_contains "${prefix}-mutation" "$ref_header" "$expected_ref" "${method} ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
+
+    http_request "${prefix}-root-after" "${base_url}/" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-root-after" 200 "GET root after ${method} ${prefix}"
+    assert_cache_state "${prefix}-root-after" HIT "GET root after ${method} ${prefix}"
+    assert_same_origin_request_id "${prefix}-root-after" "$root_id" "GET root after ${method} ${prefix}"
+
+    http_request "${prefix}-target-after" "${base_url}${target_path}" \
+        -H "Host: ${cache_host}"
+    assert_http_status "${prefix}-target-after" 200 "GET ${prefix} target after ${method}"
+    assert_cache_state "${prefix}-target-after" MISS "GET ${prefix} target after ${method}"
+    assert_different_origin_request_id "${prefix}-target-after" "$target_id" "GET ${prefix} target after ${method}"
+    echo "OK: ${method} invalidated ${ref_header} ${target_path} and preserved root"
+}
+
 run_variant_port_invalidation_case() {
     local prefix="$1"
     local create_path="$2"
@@ -90,6 +149,30 @@ run_variant_port_invalidation_case() {
 }
 
 case_id="$(openssl rand -hex 4)"
+
+echo "Testing absolute empty-path query Location and Content-Location invalidation..."
+run_empty_path_query_invalidation_case \
+    abs-query-post \
+    POST \
+    "/create-abs-query" \
+    "Location" \
+    201
+run_empty_path_query_invalidation_case \
+    content-loc-abs-query-put \
+    PUT \
+    "/create-content-location-abs-query" \
+    "Content-Location" \
+    200
+
+echo "Testing absolute authority-only Location invalidation..."
+run_referenced_invalidation_case \
+    authority-only-post \
+    POST \
+    "/create-authority-only?case=${case_id}-authority-only" \
+    "/" \
+    "Location" \
+    "http://localhost:8091" \
+    201
 
 echo "Testing relative Location invalidation for every unsafe method..."
 for method in POST PUT DELETE PATCH; do
