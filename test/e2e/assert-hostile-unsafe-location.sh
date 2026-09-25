@@ -26,28 +26,17 @@ run_referenced_invalidation_case() {
     local ref_header="$5"
     local expected_ref="$6"
     local expected_status="$7"
-    local first_id
 
-    http_request "${prefix}-first" "${base_url}${target_path}"
-    assert_http_status "${prefix}-first" 200 "first GET of ${prefix} target"
-    assert_cache_state "${prefix}-first" MISS "first GET of ${prefix} target"
-    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET of ${prefix} target")"
+    assert_mutation_invalidates \
+        "$prefix" \
+        "${base_url}${target_path}" \
+        "${base_url}${create_path}" \
+        "$method"
 
-    http_request "${prefix}-second" "${base_url}${target_path}"
-    assert_http_status "${prefix}-second" 200 "second GET of ${prefix} target"
-    assert_cache_state "${prefix}-second" HIT "second GET of ${prefix} target"
-    assert_same_origin_request_id "${prefix}-second" "$first_id" "second GET of ${prefix} target"
-
-    http_request "${prefix}-mutation" "${base_url}${create_path}" -X "$method"
     assert_http_status "${prefix}-mutation" "$expected_status" "${method} ${prefix} mutation"
     assert_header_contains "${prefix}-mutation" "$ref_header" "$expected_ref" "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
-
-    http_request "${prefix}-after" "${base_url}${target_path}"
-    assert_http_status "${prefix}-after" 200 "GET ${prefix} target after ${method}"
-    assert_cache_state "${prefix}-after" MISS "GET ${prefix} target after ${method}"
-    assert_different_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after ${method}"
     echo "OK: successful ${method} invalidated the ${ref_header} referenced URI"
 }
 
@@ -63,29 +52,11 @@ run_empty_path_query_invalidation_case() {
     local target_id
     local expected_ref="http://${cache_host}?case=${case_id}-${prefix}"
 
-    http_request "${prefix}-root-first" "${base_url}/" \
-        -H "Host: ${cache_host}"
-    assert_http_status "${prefix}-root-first" 200 "first GET of root for ${prefix}"
-    assert_cache_state "${prefix}-root-first" MISS "first GET of root for ${prefix}"
-    root_id="$(assert_origin_request_id_present "${prefix}-root-first" "first GET of root for ${prefix}")"
+    assert_cached_after_warm "${prefix}-root" "${base_url}/" -H "Host: ${cache_host}"
+    root_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
-    http_request "${prefix}-root-second" "${base_url}/" \
-        -H "Host: ${cache_host}"
-    assert_http_status "${prefix}-root-second" 200 "second GET of root for ${prefix}"
-    assert_cache_state "${prefix}-root-second" HIT "second GET of root for ${prefix}"
-    assert_same_origin_request_id "${prefix}-root-second" "$root_id" "second GET of root for ${prefix}"
-
-    http_request "${prefix}-target-first" "${base_url}${target_path}" \
-        -H "Host: ${cache_host}"
-    assert_http_status "${prefix}-target-first" 200 "first GET of ${prefix} target"
-    assert_cache_state "${prefix}-target-first" MISS "first GET of ${prefix} target"
-    target_id="$(assert_origin_request_id_present "${prefix}-target-first" "first GET of ${prefix} target")"
-
-    http_request "${prefix}-target-second" "${base_url}${target_path}" \
-        -H "Host: ${cache_host}"
-    assert_http_status "${prefix}-target-second" 200 "second GET of ${prefix} target"
-    assert_cache_state "${prefix}-target-second" HIT "second GET of ${prefix} target"
-    assert_same_origin_request_id "${prefix}-target-second" "$target_id" "second GET of ${prefix} target"
+    assert_cached_after_warm "${prefix}-target" "${base_url}${target_path}" -H "Host: ${cache_host}"
+    target_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
     http_request "${prefix}-mutation" \
         "${base_url}${create_path}?case=${case_id}-${prefix}" \
@@ -119,15 +90,8 @@ run_variant_port_invalidation_case() {
     local target_path="/location-target?case=${case_id}-${case_suffix}"
     local first_id
 
-    http_request "${prefix}-first" "${base_url}${target_path}" -H "Host: localhost"
-    assert_http_status "${prefix}-first" 200 "first GET of ${prefix} target"
-    assert_cache_state "${prefix}-first" MISS "first GET of ${prefix} target"
-    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET of ${prefix} target")"
-
-    http_request "${prefix}-second" "${base_url}${target_path}" -H "Host: localhost"
-    assert_http_status "${prefix}-second" 200 "second GET of ${prefix} target"
-    assert_cache_state "${prefix}-second" HIT "second GET of ${prefix} target"
-    assert_same_origin_request_id "${prefix}-second" "$first_id" "second GET of ${prefix} target"
+    assert_cached_after_warm "${prefix}" "${base_url}${target_path}" -H "Host: localhost"
+    first_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
     http_request "${prefix}-mutation" \
         "${base_url}/${create_path}?case=${case_id}-${case_suffix}" \
@@ -229,14 +193,8 @@ run_referenced_invalidation_case \
 
 echo "Testing cross-host Location does not invalidate same-host cache..."
 cross_target="/location-target?case=${case_id}-cross"
-http_request cross-first "${base_url}${cross_target}"
-assert_http_status cross-first 200 "first GET of cross-host target"
-assert_cache_state cross-first MISS "first GET of cross-host target"
-cross_id="$(assert_origin_request_id_present cross-first "first GET of cross-host target")"
-
-http_request cross-second "${base_url}${cross_target}"
-assert_cache_state cross-second HIT "second GET of cross-host target"
-assert_same_origin_request_id cross-second "$cross_id" "second GET of cross-host target"
+assert_cached_after_warm cross "${base_url}${cross_target}"
+cross_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
 http_request cross-mutation "${base_url}/create-cross-host?case=${case_id}-cross" -X POST
 assert_http_status cross-mutation 201 "cross-host POST mutation"
@@ -296,14 +254,8 @@ run_referenced_invalidation_case \
 
 echo "Testing mixed-case cross-host Location does not invalidate same-host cache..."
 cross_mixed_target="/location-target?case=${case_id}-cross-mixed"
-http_request cross-mixed-first "${base_url}${cross_mixed_target}"
-assert_http_status cross-mixed-first 200 "first GET of mixed-case cross-host target"
-assert_cache_state cross-mixed-first MISS "first GET of mixed-case cross-host target"
-cross_mixed_id="$(assert_origin_request_id_present cross-mixed-first "first GET of mixed-case cross-host target")"
-
-http_request cross-mixed-second "${base_url}${cross_mixed_target}"
-assert_cache_state cross-mixed-second HIT "second GET of mixed-case cross-host target"
-assert_same_origin_request_id cross-mixed-second "$cross_mixed_id" "second GET of mixed-case cross-host target"
+assert_cached_after_warm cross-mixed "${base_url}${cross_mixed_target}"
+cross_mixed_id="$ASSERT_LAST_WARMED_ORIGIN_ID"
 
 http_request cross-mixed-mutation "${base_url}/create-cross-host-mixed?case=${case_id}-cross-mixed" -X POST
 assert_http_status cross-mixed-mutation 201 "mixed-case cross-host POST mutation"

@@ -10,21 +10,12 @@ echo "Purging any existing cached account response..."
 http_request purge-account "$url" -X PURGE
 assert_http_status purge-account 200 "account PURGE"
 
-echo "Requesting /account as alice..."
-http_request account-alice "$url" -H 'Cookie: client=alice'
-assert_cache_state account-alice MISS "alice account request"
-assert_body_field_equals account-alice route account "alice account request"
-assert_body_field_equals account-alice client alice "alice account request"
-alice_request_id="$(assert_origin_request_id_present account-alice "alice account request")"
-echo "OK: Alice response stayed uncached client-specific"
-
-echo "Requesting /account as bob..."
-http_request account-bob "$url" -H 'Cookie: client=bob'
-assert_cache_state account-bob MISS "bob account request"
-assert_body_field_equals account-bob route account "bob account request"
-assert_body_field_equals account-bob client bob "bob account request"
-assert_different_origin_request_id account-bob "$alice_request_id" "bob account request"
-echo "OK: Bob response stayed uncached isolated from alice"
+echo "Requesting /account as alice and bob (assert client isolation)..."
+assert_client_isolated account "$url" 'Cookie: client=alice' 'Cookie: client=bob'
+assert_body_field_equals account-client-a route account "alice account request"
+assert_body_field_equals account-client-a client alice "alice account request"
+assert_body_field_equals account-client-b route account "bob account request"
+assert_body_field_equals account-client-b client bob "bob account request"
 
 echo "Requesting /private with Cache-Control private and no-store (first request)..."
 private_url="http://localhost:8081/private"
