@@ -11,10 +11,6 @@ RUN chown -R varnish:varnish /etc/varnish /var/lib/varnish
 VOLUME ["/var/lib/varnish", "/etc/varnish"]
 EXPOSE 80
 
-ENV VARNISH_LISTEN=0.0.0.0:80 \
-    VARNISH_VCL=/etc/varnish/default.vcl \
-    VARNISH_STORAGE=malloc,1g
-ENV VARNISH_EXTRA_ARGS=""
 ADD start.sh /start.sh
 RUN chown varnish:varnish /start.sh && chmod +x /start.sh
 

@@ -159,6 +159,39 @@ test-smoke-runtime-interface:
 			exit 1; \
 		fi; \
 		docker rm -f $$name >/dev/null; \
+		for binary in varnishd /usr/sbin/varnishd; do \
+			override_name="$(CONTAINER_PREFIX)-start-override-$$(openssl rand -hex 4)"; \
+			trap 'docker rm -f "$$override_name" >/dev/null 2>&1 || true; rm -rf "$$tmpdir"' EXIT; \
+			if [ "$$binary" = "varnishd" ]; then override_port=18084; else override_port=18085; fi; \
+			docker run -d --name $$override_name -p 127.0.0.1:$$override_port:8080 \
+				-e "VARNISH_START=$$binary -F -f /etc/varnish/default.vcl -a 0.0.0.0:8080 -s malloc,64m" \
+				$(IMAGE) >/dev/null; \
+			echo "Waiting for VARNISH_START '$$binary' command on $$override_port..."; \
+			timeout=30; \
+			status="000"; \
+			while [ $$timeout -gt 0 ]; do \
+				status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$$override_port || true); \
+				if [ "$$status" != "000" ]; then \
+					echo "OK: VARNISH_START '$$binary' served HTTP $$status"; \
+					break; \
+				fi; \
+				if [ "$$(docker inspect -f '{{.State.Running}}' $$override_name)" != "true" ]; then \
+					echo "FAIL: VARNISH_START '$$binary' container exited before serving HTTP"; \
+					docker logs $$override_name; \
+					exit 1; \
+				fi; \
+				sleep 1; \
+				timeout=$$((timeout - 1)); \
+			done; \
+			if [ "$$status" = "000" ]; then \
+				echo "FAIL: VARNISH_START '$$binary' did not expose HTTP"; \
+				docker logs $$override_name; \
+				exit 1; \
+			fi; \
+			docker exec $$override_name varnishadm status >/dev/null; \
+			docker rm -f $$override_name >/dev/null; \
+		done; \
+		echo "OK: VARNISH_START works on the stock image without clearing defaults"; \
 		assert_fails_fast() { \
 			local var_name="$$1"; \
 			local var_val="$$2"; \
@@ -201,35 +234,28 @@ test-smoke-runtime-interface:
 		assert_fails_fast "VARNISH_STORAGE" "malloc" "Invalid VARNISH_STORAGE 'malloc'; expected backend,size"; \
 		assert_fails_fast "VARNISH_STORAGE" "malloc," "Invalid VARNISH_STORAGE 'malloc,'; expected backend,size"; \
 		assert_fails_fast "VARNISH_STORAGE" ",1g" "Invalid VARNISH_STORAGE ',1g'; expected backend,size"; \
-		log_file="$$tmpdir/start-backend-conflict.log"; \
-	set +e; \
-	docker run --rm -e VARNISH_START='echo hi' -e VARNISH_BACKEND_HOST=localhost $(IMAGE) >"$$log_file" 2>&1 & \
-	pid=$$!; \
-	for _ in 1 2 3 4 5; do \
-		if ! kill -0 $$pid >/dev/null 2>&1; then \
-			break; \
-		fi; \
-		sleep 1; \
-	done; \
-	if kill -0 $$pid >/dev/null 2>&1; then \
-		kill $$pid >/dev/null 2>&1 || true; \
-		wait $$pid || true; \
-		status=124; \
-	else \
-		wait $$pid; \
-		status=$$?; \
-	fi; \
-	set -e; \
-	if [ $$status -eq 0 ] || [ $$status -eq 124 ]; then \
-		echo "FAIL: VARNISH_START with VARNISH_BACKEND_* should fail fast"; \
-		cat "$$log_file"; \
-		exit 1; \
-	fi; \
-	if ! grep -q "VARNISH_START cannot be combined" "$$log_file"; then \
-		echo "FAIL: VARNISH_START with VARNISH_BACKEND_* should fail clearly"; \
-		cat "$$log_file"; \
-		exit 1; \
-	fi; \
+		assert_start_conflict() { \
+			local setting="$$1"; \
+			local output; \
+			local status; \
+			set +e; \
+			output=$$(docker run --rm -e 'VARNISH_START=echo hi' -e "$$setting" $(IMAGE) 2>&1); \
+			status=$$?; \
+			set -e; \
+			if [ $$status -ne 1 ] || ! printf '%s' "$$output" | grep -Fq "VARNISH_START cannot be combined"; then \
+				echo "FAIL: VARNISH_START with $$setting should fail with a clear conflict"; \
+				printf '%s\n' "$$output"; \
+				exit 1; \
+			fi; \
+			echo "OK: VARNISH_START conflicts with $$setting"; \
+		}; \
+		assert_start_conflict "VARNISH_LISTEN=0.0.0.0:80"; \
+		assert_start_conflict "VARNISH_VCL=/etc/varnish/default.vcl"; \
+		assert_start_conflict "VARNISH_STORAGE=malloc,64m"; \
+		assert_start_conflict "VARNISH_EXTRA_ARGS=-p thread_pool_min=1"; \
+		assert_start_conflict "VARNISH_BACKEND_HOST=localhost"; \
+		assert_start_conflict "VARNISH_BACKEND_PORT=8080"; \
+		assert_start_conflict "VARNISH_BACKEND_PROBE_PATH=/healthz"; \
 	name="$(CONTAINER_PREFIX)-backend-config-$$(openssl rand -hex 4)"; \
 	docker run -d --name $$name \
 		-e VARNISH_BACKEND_HOST=localhost \
