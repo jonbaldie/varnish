@@ -108,7 +108,7 @@ configure_scenario() {
       assertion_script="$repo_root/test/e2e/assert-hostile-zero-ttl.sh"
       ;;
     surrogate-esi-nostore)
-      use_scenario_compose "surrogate-esi-nostore-test" 8089
+      use_scenario_compose "surrogate-esi-nostore-test" "${HOSTILE_SURROGATE_ESI_PORT:-8089}"
       assertion_script="$repo_root/test/e2e/assert-hostile-surrogate-esi.sh"
       ;;
     revalidate)

@@ -8,7 +8,8 @@ ADD install.sh install.sh
 RUN chmod +x install.sh render-vcl.sh && sh ./install.sh && rm install.sh embedded-default.vcl cache-policy.vcl render-vcl.sh
 RUN chown -R varnish:varnish /etc/varnish /var/lib/varnish
 
-VOLUME ["/var/lib/varnish", "/etc/varnish"]
+# Keep configuration image-owned so Compose rebuilds pick up updated VCL files.
+VOLUME ["/var/lib/varnish"]
 EXPOSE 80
 
 ADD start.sh /start.sh

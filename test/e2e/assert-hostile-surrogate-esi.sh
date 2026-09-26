@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "$repo_root/test/e2e/http-cache-assert.sh"
 
-base_url="http://localhost:8089"
+base_url="http://localhost:${HOSTILE_SCENARIO_PORT:-8089}"
 
 # Surrogate-Control is a directive aimed at surrogate/CDN caches. It only
 # relaxes the Cache-Control handling for the shared cache when it actually

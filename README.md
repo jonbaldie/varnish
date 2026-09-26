@@ -68,7 +68,9 @@ docker compose restart varnish
 
 If you changed mounted cache policy or backend environment values, restart the container so `varnishd` starts
 again with the updated configuration. If you changed image files, rebuild first
-with `docker compose up -d --build`.
+with `docker compose up -d --build`. The image owns `/etc/varnish`, so a recreated
+container uses configuration from the rebuilt image. The sample's
+`cache-policy.vcl` remains a separate read-only bind mount.
 
 ## VCL Configuration
 
