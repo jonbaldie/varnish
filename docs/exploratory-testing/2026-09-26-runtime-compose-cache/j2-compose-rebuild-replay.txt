@@ -1,0 +1,8 @@
+## step 1: docker compose up -d --build (stock image)
+X-Image-Build header count: 0
+## step 2: change embedded-default.vcl, docker compose up -d --build (README workflow)
+X-Image-Build header count: 0
+container default.vcl md5: 32d9482a66957f052bbcb0f486b8cb5d  /etc/varnish/default.vcl
+image     default.vcl md5: f145896cbc1442150d0a93a3e7372101  /etc/varnish/default.vcl
+## step 3: docker compose down && up -d
+X-Image-Build header count: 1
