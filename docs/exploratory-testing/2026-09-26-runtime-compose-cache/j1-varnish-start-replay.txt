@@ -1,0 +1,15 @@
+## image ENV
+VARNISH_LISTEN=0.0.0.0:80
+VARNISH_VCL=/etc/varnish/default.vcl
+VARNISH_STORAGE=malloc,1g
+VARNISH_EXTRA_ARGS=
+## 1: VARNISH_START only
+ERROR: VARNISH_START cannot be combined with VARNISH_LISTEN, VARNISH_VCL, VARNISH_STORAGE, VARNISH_EXTRA_ARGS, or VARNISH_BACKEND_*
+exit=1
+## 2: VARNISH_START with the image ENV defaults blanked (timeout exit 124 = varnishd still running)
+Debug: Version: varnish-7.1.1 revision 7cee1c581bead20e88d101ab3d72afb29f14d87a
+Debug: Platform: Linux,7.0.14-orbstack-00380-ga7e0a2dc9535,aarch64,-jnone,-smalloc,-sdefault,-hcritbit
+exit=141
+## 3: same, but bare 'varnishd' (not on the login-shell PATH of user varnish)
+/bin/bash: line 1: varnishd: command not found
+exit=127
