@@ -8,11 +8,12 @@ fail() {
 }
 
 if [ -n "${VARNISH_START:-}" ]; then
+	# Defaults belong below this branch so they do not look caller-supplied here.
 	if [ -n "${VARNISH_LISTEN:-}" ] || [ -n "${VARNISH_VCL:-}" ] || [ -n "${VARNISH_STORAGE:-}" ] || [ -n "${VARNISH_EXTRA_ARGS:-}" ] || [ -n "${VARNISH_BACKEND_HOST:-}" ] || [ -n "${VARNISH_BACKEND_PORT:-}" ] || [ -n "${VARNISH_BACKEND_PROBE_PATH:-}" ]; then
 		fail "VARNISH_START cannot be combined with VARNISH_LISTEN, VARNISH_VCL, VARNISH_STORAGE, VARNISH_EXTRA_ARGS, or VARNISH_BACKEND_*"
 	fi
 
-	exec /bin/bash -lc "${VARNISH_START}"
+	exec /bin/bash -lc "export PATH=\"/usr/sbin:\$PATH\"; ${VARNISH_START}"
 fi
 
 listen="${VARNISH_LISTEN:-0.0.0.0:80}"
