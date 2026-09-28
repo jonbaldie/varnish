@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-compose-fixture-lifecycle test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -312,72 +312,13 @@ test-backend-config-adapter:
 
 test-integration:
 	@echo "=== Test: Integration test ==="
-	@set -euo pipefail; \
-	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
-	docker compose up -d --build; \
-	echo "Waiting for services to be ready..."; \
-	timeout=60; \
-	while [ $$timeout -gt 0 ]; do \
-		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
-			echo "OK: Services are ready"; \
-			break; \
-		fi; \
-		sleep 2; \
-		timeout=$$((timeout - 2)); \
-	done; \
-	if [ $$timeout -eq 0 ]; then \
-		echo "FAIL: Services did not become ready within 60s"; \
-		docker compose logs; \
-		exit 1; \
-	fi; \
-	echo "Checking HTTP 200..."; \
-	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 http://localhost); \
-	if [ "$$status" != "200" ]; then \
-		echo "FAIL: Expected HTTP 200, got $$status"; \
-		exit 1; \
-	fi; \
-	echo "OK: HTTP 200"; \
-	test_url="http://localhost/?cachebust=$$(openssl rand -hex 8)"; \
-	echo "Checking X-Cache MISS on first request..."; \
-	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
-	if ! echo "$$cache" | grep -qi MISS; then \
-		echo "FAIL: Expected X-Cache MISS, got: $$cache"; \
-		exit 1; \
-	fi; \
-	echo "OK: X-Cache MISS"; \
-	echo "Checking X-Cache HIT on second request..."; \
-	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
-	if ! echo "$$cache" | grep -qi HIT; then \
-		echo "FAIL: Expected X-Cache HIT, got: $$cache"; \
-		exit 1; \
-	fi; \
-	echo "OK: X-Cache HIT"; \
-	echo "Checking Host header compliance (RFC 9112 / RFC 9110)..."; \
-	./test/e2e/assert-host-header.sh; \
-	echo "=== Test: Integration test PASSED ==="
+	@./test/e2e/compose-fixture.sh run --compose-file "$(CURDIR)/docker-compose.yml" --readiness-url http://localhost --ready-message "OK: Services are ready" --timeout 60 -- "$(CURDIR)/test/e2e/assert-compose-integration.sh"
+	@echo "=== Test: Integration test PASSED ==="
 
 test-host-header:
 	@echo "=== Test: Host header compliance (RFC 9112 / RFC 9110) ==="
-	@set -euo pipefail; \
-	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
-	docker compose up -d --build; \
-	echo "Waiting for services to be ready..."; \
-	timeout=60; \
-	while [ $$timeout -gt 0 ]; do \
-		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
-			echo "OK: Services are ready"; \
-			break; \
-		fi; \
-		sleep 2; \
-		timeout=$$((timeout - 2)); \
-	done; \
-	if [ $$timeout -eq 0 ]; then \
-		echo "FAIL: Services did not become ready within 60s"; \
-		docker compose logs; \
-		exit 1; \
-	fi; \
-	./test/e2e/assert-host-header.sh; \
-	echo "=== Test: Host header compliance PASSED ==="
+	@./test/e2e/compose-fixture.sh run --compose-file "$(CURDIR)/docker-compose.yml" --readiness-url http://localhost --ready-message "OK: Services are ready" --timeout 60 -- "$(CURDIR)/test/e2e/assert-host-header.sh"
+	@echo "=== Test: Host header compliance PASSED ==="
 
 test-host-header-invalid:
 	@echo "=== Test: Invalid Host header values are rejected (RFC 9112 / RFC 9110) ==="
@@ -396,101 +337,13 @@ test-security:
 
 test-purge:
 	@echo "=== Test: PURGE ==="
-	@set -euo pipefail; \
-	trap "docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
-	docker compose up -d --build; \
-	echo "Waiting for services to be ready..."; \
-	timeout=60; \
-	while [ $$timeout -gt 0 ]; do \
-		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
-			echo "OK: Services are ready"; \
-			break; \
-		fi; \
-		sleep 2; \
-		timeout=$$((timeout - 2)); \
-	done; \
-	if [ $$timeout -eq 0 ]; then \
-		echo "FAIL: Services did not become ready within 60s"; \
-		docker compose logs; \
-		exit 1; \
-	fi; \
-	test_path="/?cachebust=$$(openssl rand -hex 8)"; \
-	test_url="http://localhost$$test_path"; \
-	echo "Priming cache..."; \
-	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
-	if ! echo "$$cache" | grep -qi MISS; then \
-		echo "FAIL: Expected X-Cache MISS, got: $$cache"; \
-		exit 1; \
-	fi; \
-	echo "OK: X-Cache MISS"; \
-	echo "Checking X-Cache HIT..."; \
-	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
-	if ! echo "$$cache" | grep -qi HIT; then \
-		echo "FAIL: Expected X-Cache HIT, got: $$cache"; \
-		exit 1; \
-	fi; \
-	echo "OK: X-Cache HIT"; \
-	echo "Sending PURGE from Varnish loopback..."; \
-	varnish_container=$$(docker compose ps -q varnish); \
-	if [ -z "$$varnish_container" ]; then \
-		echo "FAIL: Could not find Varnish container"; \
-		exit 1; \
-	fi; \
-	status=$$(docker run --rm --network "container:$$varnish_container" alpine sh -c 'apk add -q curl >/dev/null && curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X PURGE -H "Host: localhost" "$$1"' sh "http://127.0.0.1$$test_path"); \
-	if [ "$$status" != "200" ]; then \
-		echo "FAIL: Expected PURGE HTTP 200, got $$status"; \
-		exit 1; \
-	fi; \
-	echo "OK: PURGE returned 200"; \
-	echo "Checking X-Cache MISS after PURGE..."; \
-	cache=$$(curl -sI --max-time 10 "$$test_url" | grep -i x-cache); \
-	if ! echo "$$cache" | grep -qi MISS; then \
-		echo "FAIL: Expected X-Cache MISS after PURGE, got: $$cache"; \
-		exit 1; \
-	fi; \
-	echo "OK: X-Cache MISS after PURGE"; \
-	echo "=== Test: PURGE PASSED ==="
+	@./test/e2e/compose-fixture.sh run --compose-file "$(CURDIR)/docker-compose.yml" --readiness-url http://localhost --ready-message "OK: Services are ready" --timeout 60 -- "$(CURDIR)/test/e2e/assert-compose-purge.sh"
+	@echo "=== Test: PURGE PASSED ==="
 
 test-grace:
 	@echo "=== Test: Grace period (backend down) ==="
-	@set -euo pipefail; \
-	trap "docker compose up -d web >/dev/null 2>&1; docker compose down --remove-orphans >/dev/null 2>&1" EXIT; \
-	docker compose up -d --build; \
-	echo "Waiting for services to be ready..."; \
-	timeout=60; \
-	while [ $$timeout -gt 0 ]; do \
-		if curl -sf --max-time 10 http://localhost >/dev/null 2>&1; then \
-			echo "OK: Services are ready"; \
-			break; \
-		fi; \
-		sleep 2; \
-		timeout=$$((timeout - 2)); \
-	done; \
-	if [ $$timeout -eq 0 ]; then \
-		echo "FAIL: Services did not become ready within 60s"; \
-		docker compose logs; \
-		exit 1; \
-	fi; \
-	test_url="http://localhost/?cachebust=$$(openssl rand -hex 8)"; \
-	echo "Priming cache..."; \
-	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$$test_url"); \
-	if [ "$$status" != "200" ]; then \
-		echo "FAIL: Expected HTTP 200, got $$status"; \
-		exit 1; \
-	fi; \
-	echo "OK: Cache primed with HTTP 200"; \
-	echo "Stopping web container..."; \
-	docker compose stop web; \
-	echo "Waiting for backend to be marked sick (~15s)..."; \
-	sleep 18; \
-	echo "Checking request with backend down..."; \
-	status=$$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$$test_url"); \
-	if [ "$$status" != "200" ]; then \
-		echo "FAIL: Expected HTTP 200 from grace, got $$status"; \
-		exit 1; \
-		fi; \
-	echo "OK: HTTP 200 from grace"; \
-	echo "=== Test: Grace period PASSED ==="
+	@./test/e2e/compose-fixture.sh run --compose-file "$(CURDIR)/docker-compose.yml" --readiness-url http://localhost --ready-message "OK: Services are ready" --timeout 60 --restore-service web -- "$(CURDIR)/test/e2e/assert-compose-grace.sh"
+	@echo "=== Test: Grace period PASSED ==="
 
 test-hostile-static-cookie:
 	@echo "=== Test: Hostile static asset strips cookies stays cacheable ==="
@@ -562,6 +415,10 @@ test-hostile-accept-encoding-canary:
 		exit 1; \
 	fi; \
 	echo "OK: hostile accept-encoding scenario failed under mutant shared cache policy"
+
+test-compose-fixture-lifecycle:
+	@echo "=== Test: Compose fixture lifecycle contract ==="
+	@./test/e2e/assert-compose-fixture-lifecycle.sh
 
 test-e2e-scenario-config:
 	@echo "=== Test: E2E hostile scenario config ==="
