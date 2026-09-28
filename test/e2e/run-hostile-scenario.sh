@@ -8,6 +8,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ready_timeout=60
 curl_max_time=10
 available_scenarios=(static-cookie account-cookie set-cookie query-suffix accept-encoding 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore revalidate host-header unsafe-location)
+restore_services=()
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -87,6 +88,7 @@ configure_scenario() {
       ;;
     grace)
       use_scenario_compose "grace-stale" 8083
+      restore_services=(web)
       assertion_script="$repo_root/test/e2e/assert-hostile-grace.sh"
       ;;
     purge-acl)
@@ -113,6 +115,7 @@ configure_scenario() {
       ;;
     revalidate)
       use_scenario_compose "revalidate-test" 8090
+      restore_services=(web)
       assertion_script="$repo_root/test/e2e/assert-hostile-revalidate.sh"
       ;;
     host-header)
@@ -140,17 +143,6 @@ describe_scenario() {
   echo "services=$(IFS=,; echo "${services[*]-}")"
 }
 
-compose() {
-  local args=(-p "$project")
-  local compose_file
-
-  for compose_file in "${compose_files[@]}"; do
-    args+=(-f "$compose_file")
-  done
-
-  docker compose "${args[@]}" "$@"
-}
-
 cleanup() {
   if [ -n "${tmpdir:-}" ] && [ -d "${tmpdir:-}" ]; then
     rm -rf "$tmpdir"
@@ -159,28 +151,6 @@ cleanup() {
   if [ -n "${lockdir:-}" ]; then
     rm -rf "$lockdir"
   fi
-
-  if [ -n "${project:-}" ]; then
-    compose down --remove-orphans >/dev/null 2>&1 || true
-  fi
-}
-
-wait_for_ready() {
-  local timeout="$1"
-  local ready_url="$2"
-  local ready_message="$3"
-
-  while [ "$timeout" -gt 0 ]; do
-    if curl -sf --max-time 10 "$ready_url" >/dev/null 2>&1; then
-      echo "$ready_message"
-      return 0
-    fi
-
-    sleep 2
-    timeout=$((timeout - 2))
-  done
-
-  return 1
 }
 
 if [ -z "$scenario" ]; then
@@ -199,13 +169,6 @@ if [ "$scenario" = "--describe" ]; then
 fi
 
 configure_scenario
-
-export HOSTILE_SCENARIO_PORT="${HOSTILE_SCENARIO_PORT:-}"
-export HOSTILE_SCENARIO_SUBNET="${HOSTILE_SCENARIO_SUBNET:-}"
-export HOSTILE_SCENARIO_VARNISH_IP="${HOSTILE_SCENARIO_VARNISH_IP:-}"
-export COMPOSE_FILE
-COMPOSE_FILE="$(IFS=:; echo "${compose_files[*]}")"
-export COMPOSE_PROJECT_NAME="$project"
 
 trap cleanup EXIT
 
@@ -233,23 +196,41 @@ networks:
         - subnet: ${HOSTILE_SCENARIO_SUBNET:?HOSTILE_SCENARIO_SUBNET required}
 EOF
   compose_files+=("$purge_override")
-  COMPOSE_FILE="$(IFS=:; echo "${compose_files[*]}")"
 fi
 
+fixture_args=(
+  run
+  --project "$project"
+  --readiness-url "$readiness_url"
+  --ready-message "OK: Hostile services ready"
+  --timeout "$ready_timeout"
+  --curl-timeout "$curl_max_time"
+  --poll-interval 2
+)
+for compose_file in "${compose_files[@]}"; do
+  fixture_args+=(--compose-file "$compose_file")
+done
 if [ "${#services[@]}" -gt 0 ]; then
-  compose up -d --build "${services[@]}"
-else
-  compose up -d --build
+  for service in "${services[@]}"; do
+    fixture_args+=(--service "$service")
+  done
 fi
-
-echo "Waiting hostile services be ready..."
-if ! wait_for_ready "$ready_timeout" "$readiness_url" "OK: Hostile services ready"; then
-  echo "FAIL: Hostile services did not become ready within ${ready_timeout}s"
-  compose logs
-  exit 1
+if [ -n "${HOSTILE_SCENARIO_PORT:-}" ]; then
+  fixture_args+=(--env "HOSTILE_SCENARIO_PORT=$HOSTILE_SCENARIO_PORT")
+fi
+if [ -n "${HOSTILE_SCENARIO_SUBNET:-}" ]; then
+  fixture_args+=(--env "HOSTILE_SCENARIO_SUBNET=$HOSTILE_SCENARIO_SUBNET")
+fi
+if [ -n "${HOSTILE_SCENARIO_VARNISH_IP:-}" ]; then
+  fixture_args+=(--env "HOSTILE_SCENARIO_VARNISH_IP=$HOSTILE_SCENARIO_VARNISH_IP")
+fi
+if [ "${#restore_services[@]}" -gt 0 ]; then
+  for service in "${restore_services[@]}"; do
+    fixture_args+=(--restore-service "$service")
+  done
 fi
 
 export TEST_TMPDIR="$tmpdir"
 export TEST_PROJECT="$project"
 export TEST_CURL_MAX_TIME="$curl_max_time"
-"$assertion_script"
+"$repo_root/test/e2e/compose-fixture.sh" "${fixture_args[@]}" -- "$assertion_script"

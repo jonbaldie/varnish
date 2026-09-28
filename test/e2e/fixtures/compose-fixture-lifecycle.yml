@@ -1,0 +1,5 @@
+services:
+  fixture-web:
+    image: nginx:alpine
+    ports:
+      - "${FIXTURE_PORT:?FIXTURE_PORT is required}:80"

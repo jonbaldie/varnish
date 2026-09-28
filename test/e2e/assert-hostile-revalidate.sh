@@ -69,7 +69,7 @@ assert_cache_state prime-normal-grace MISS "prime normal grace"
 control_id="$(assert_origin_request_id_present prime-normal-grace "prime normal grace")"
 
 echo "Stopping origin backend..."
-docker compose stop web
+"$COMPOSE_FIXTURE_SCRIPT" stop web
 
 echo "Waiting 2s for TTL expiry..."
 sleep 2
