@@ -55,3 +55,5 @@ echo "$unknown_output" | grep -q 'Available scenarios: static-cookie, account-co
 }
 
 echo "OK: E2E harness exposes scenario metadata and useful failures"
+
+"$repo_root/test/e2e/assert-http-cache-lifecycle.sh"
