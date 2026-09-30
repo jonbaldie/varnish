@@ -25,9 +25,9 @@ sub vcl_backend_response {
     set beresp.http.X-Varnish-Cache-Host = bereq.http.host;
     set beresp.http.X-Varnish-Cache-URL = bereq.url;
 
-    # Mutant: invalidates only the target URI. Location and
-    # Content-Location referenced URIs (RFC 9111 §4.4) stay cached.
-    if (bereq.method ~ "^(POST|PUT|DELETE|PATCH)$" && beresp.status < 400) {
+    # Mutant: target invalidation covers all unsafe methods, but Location
+    # and Content-Location referenced URIs (RFC 9111 §4.4) stay cached.
+    if (bereq.method !~ "^(GET|HEAD|OPTIONS|TRACE)$" && beresp.status < 400) {
         ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host +
             " && obj.http.X-Varnish-Cache-URL == " + bereq.url);
     }

@@ -167,9 +167,10 @@ sub vcl_backend_response {
     set beresp.http.X-Varnish-Cache-Host = bereq.http.host;
     set beresp.http.X-Varnish-Cache-URL = bereq.url;
 
-    # A pass only bypasses lookup for the mutating request. RFC 9111 §4.4
-    # also requires a successful unsafe response to invalidate the target URI.
-    if (bereq.method ~ "^(POST|PUT|DELETE|PATCH)$" && beresp.status < 400) {
+    # A pass only bypasses lookup for the unsafe request. RFC 9111 §4.4
+    # requires invalidation for all unsafe methods, which RFC 9110 §9.2.1
+    # defines as every method except GET, HEAD, OPTIONS, and TRACE.
+    if (bereq.method !~ "^(GET|HEAD|OPTIONS|TRACE)$" && beresp.status < 400) {
         ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host +
             " && obj.http.X-Varnish-Cache-URL == " + bereq.url);
 

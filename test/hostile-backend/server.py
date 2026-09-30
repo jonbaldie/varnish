@@ -203,7 +203,7 @@ class Handler(BaseHTTPRequestHandler):
             "/create-content-location-abs-mixed",
             "/create-content-location-abs-upper-host",
         ):
-            if self.command in ("POST", "PUT", "DELETE", "PATCH"):
+            if self.command in ("POST", "PUT", "DELETE", "PATCH", "MKCOL"):
                 query = self.path.split("?", 1)[1] if "?" in self.path else ""
                 suffix = f"?{query}" if query else ""
                 host = self.headers.get("Host") or "localhost"
@@ -343,7 +343,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if clean_path in ("/mutation-error-4xx", "/mutation-error-5xx"):
-            if self.command in ("POST", "PUT", "DELETE", "PATCH"):
+            if self.command in ("POST", "PUT", "DELETE", "PATCH", "MKCOL"):
                 status = 409 if clean_path.endswith("4xx") else 500
                 self.respond(status, f"route={clean_path.lstrip('/')}\n")
             else:
@@ -762,6 +762,15 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_PATCH(self) -> None:
+        self.do_GET()
+
+    def do_MKCOL(self) -> None:
+        self.do_GET()
+
+    def do_OPTIONS(self) -> None:
+        self.do_GET()
+
+    def do_TRACE(self) -> None:
         self.do_GET()
 
     def log_message(self, format: str, *args) -> None:

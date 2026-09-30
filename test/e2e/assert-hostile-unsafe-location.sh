@@ -54,6 +54,45 @@ run_referenced_invalidation_case() {
     echo "OK: successful ${method} invalidated the ${ref_header} referenced URI"
 }
 
+run_target_invalidation_case() {
+    local prefix="$1"
+    local method="$2"
+    local target_path="$3"
+    local mutation_status="$4"
+    local expected_cache_state="$5"
+    local first_id
+
+    http_request "${prefix}-first" "${base_url}${target_path}"
+    assert_http_status "${prefix}-first" 200 "first GET of ${prefix} target"
+    assert_cache_state "${prefix}-first" MISS "first GET of ${prefix} target"
+    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET of ${prefix} target")"
+
+    http_request "${prefix}-second" "${base_url}${target_path}"
+    assert_http_status "${prefix}-second" 200 "second GET of ${prefix} target"
+    assert_cache_state "${prefix}-second" HIT "second GET of ${prefix} target"
+    assert_same_origin_request_id "${prefix}-second" "$first_id" "second GET of ${prefix} target"
+
+    if [[ "$method" == "HEAD" ]]; then
+        http_request "${prefix}-mutation" "${base_url}${target_path}" -I
+    else
+        http_request "${prefix}-mutation" "${base_url}${target_path}" -X "$method"
+    fi
+    assert_http_status "${prefix}-mutation" "$mutation_status" "${method} ${prefix} mutation"
+    if [[ "$method" != "GET" && "$method" != "HEAD" ]]; then
+        assert_different_origin_request_id "${prefix}-mutation" "$first_id" "${method} ${prefix} mutation"
+    fi
+
+    http_request "${prefix}-after" "${base_url}${target_path}"
+    assert_http_status "${prefix}-after" 200 "GET ${prefix} target after ${method}"
+    assert_cache_state "${prefix}-after" "$expected_cache_state" "GET ${prefix} target after ${method}"
+    if [[ "$expected_cache_state" == "MISS" ]]; then
+        assert_different_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after ${method}"
+    else
+        assert_same_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after ${method}"
+    fi
+    echo "OK: ${method} target invalidation result was ${expected_cache_state}"
+}
+
 run_empty_path_query_invalidation_case() {
     local prefix="$1"
     local method="$2"
@@ -170,6 +209,55 @@ assert_no_space_ban_syntax_errors() {
 }
 
 case_id="$(openssl rand -hex 4)"
+
+echo "Testing successful unsafe-method target invalidation beyond the common verbs..."
+run_target_invalidation_case \
+    mkcol-target \
+    MKCOL \
+    "/location-target?case=${case_id}-mkcol-target" \
+    200 \
+    MISS
+
+echo "Testing MKCOL Location and Content-Location reference invalidation..."
+run_referenced_invalidation_case \
+    mkcol-location \
+    MKCOL \
+    "/create-rel?case=${case_id}-mkcol-location" \
+    "/location-target?case=${case_id}-mkcol-location" \
+    "Location" \
+    "/location-target?case=${case_id}-mkcol-location" \
+    201
+run_referenced_invalidation_case \
+    mkcol-content-location \
+    MKCOL \
+    "/create-content-location?case=${case_id}-mkcol-content-location" \
+    "/content-location-target?case=${case_id}-mkcol-content-location" \
+    "Content-Location" \
+    "/content-location-target?case=${case_id}-mkcol-content-location" \
+    200
+
+echo "Testing safe methods and error responses do not invalidate the target..."
+for method in GET HEAD OPTIONS TRACE; do
+    method_slug="$(printf '%s' "$method" | tr '[:upper:]' '[:lower:]')"
+    run_target_invalidation_case \
+        "safe-${method_slug}" \
+        "$method" \
+        "/location-target?case=${case_id}-safe-${method_slug}" \
+        200 \
+        HIT
+done
+run_target_invalidation_case \
+    mkcol-4xx \
+    MKCOL \
+    "/mutation-error-4xx?case=${case_id}-mkcol-4xx" \
+    409 \
+    HIT
+run_target_invalidation_case \
+    mkcol-5xx \
+    MKCOL \
+    "/mutation-error-5xx?case=${case_id}-mkcol-5xx" \
+    500 \
+    HIT
 
 echo "Testing unencoded spaces in Location and Content-Location references..."
 run_referenced_invalidation_case \
