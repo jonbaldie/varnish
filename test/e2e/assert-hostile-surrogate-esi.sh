@@ -82,6 +82,87 @@ assert_cache_state grant-2 HIT "surrogate-fresh second request"
 assert_same_origin_request_id grant-2 "$grant_id" "surrogate-fresh second request"
 echo "OK: Surrogate-Control max-age grant still cacheable and served as HIT"
 
+assert_surrogate_freshness_extension() {
+  local url="${base_url}/surrogate-short-extended"
+  local first_id
+
+  http_request purge-extended "$url" -X PURGE
+  assert_http_status purge-extended 200 "extended surrogate freshness PURGE"
+  http_request extended-1 "$url"
+  assert_http_status extended-1 200 "extended surrogate freshness first request"
+  assert_cache_state extended-1 MISS "extended surrogate freshness first request"
+  first_id="$(assert_origin_request_id_present extended-1 "extended surrogate freshness first request")"
+
+  http_request extended-2 "$url"
+  assert_http_status extended-2 200 "extended surrogate freshness within max-age"
+  assert_cache_state extended-2 HIT "extended surrogate freshness within max-age"
+  assert_same_origin_request_id extended-2 "$first_id" "extended surrogate freshness within max-age"
+
+  sleep 3
+  http_request extended-3 "$url"
+  assert_http_status extended-3 200 "stale response within freshness extension"
+  assert_cache_state extended-3 HIT "stale response within freshness extension"
+  assert_same_origin_request_id extended-3 "$first_id" "stale response within freshness extension"
+
+  sleep 5
+  http_request extended-4 "$url"
+  assert_http_status extended-4 200 "request after freshness extension"
+  assert_cache_state extended-4 MISS "request after freshness extension"
+  assert_different_origin_request_id extended-4 "$first_id" "request after freshness extension"
+  echo "OK: Surrogate-Control freshness extension permits stale delivery only for its duration"
+}
+
+assert_positive_surrogate_freshness_expires() {
+  local label="$1"
+  local path="$2"
+  local url="${base_url}${path}"
+  local first_id
+
+  http_request "purge-${label}" "$url" -X PURGE
+  assert_http_status "purge-${label}" 200 "${label} PURGE"
+
+  http_request "${label}-1" "$url"
+  assert_http_status "${label}-1" 200 "${label} first request"
+  assert_cache_state "${label}-1" MISS "${label} first request"
+  first_id="$(assert_origin_request_id_present "${label}-1" "${label} first request")"
+
+  http_request "${label}-2" "$url"
+  assert_http_status "${label}-2" 200 "${label} request within surrogate max-age"
+  assert_cache_state "${label}-2" HIT "${label} request within surrogate max-age"
+  assert_same_origin_request_id "${label}-2" "$first_id" "${label} request within surrogate max-age"
+
+  echo "Waiting 3s for ${label} Surrogate-Control max-age=2 to expire..."
+  sleep 3
+  http_request "${label}-3" "$url"
+  assert_http_status "${label}-3" 200 "${label} request after surrogate max-age"
+  assert_cache_state "${label}-3" MISS "${label} request after surrogate max-age"
+  assert_different_origin_request_id "${label}-3" "$first_id" "${label} request after surrogate max-age"
+}
+
+# Positive Surrogate-Control freshness sets beresp.ttl even when a private
+# Cache-Control policy or a longer downstream max-age would otherwise apply.
+assert_positive_surrogate_freshness_expires short-private /surrogate-short-private
+assert_positive_surrogate_freshness_expires short-public /surrogate-short-public
+assert_positive_surrogate_freshness_expires short-normalized /surrogate-short-normalized
+assert_positive_surrogate_freshness_expires short-static /static/surrogate-short.css
+assert_surrogate_freshness_extension
+
+echo "OK: positive Surrogate-Control max-age controls the surrogate TTL"
+
+# Positive Surrogate-Control freshness overrides an invalid Expires value.
+url_invalid_expires="${base_url}/surrogate-fresh-invalid-expires"
+http_request purge-invalid-expires "$url_invalid_expires" -X PURGE
+assert_http_status purge-invalid-expires 200 "surrogate-fresh-invalid-expires PURGE"
+http_request invalid-expires-1 "$url_invalid_expires"
+assert_http_status invalid-expires-1 200 "surrogate-fresh-invalid-expires first request"
+assert_cache_state invalid-expires-1 MISS "surrogate-fresh-invalid-expires first request"
+invalid_expires_id="$(assert_origin_request_id_present invalid-expires-1 "surrogate-fresh-invalid-expires first request")"
+http_request invalid-expires-2 "$url_invalid_expires"
+assert_cache_state invalid-expires-2 HIT "surrogate-fresh-invalid-expires second request"
+assert_same_origin_request_id invalid-expires-2 "$invalid_expires_id" "surrogate-fresh-invalid-expires second request"
+
+echo "OK: Surrogate-Control max-age overrides invalid Expires"
+
 # Control: Surrogate-Control no-store keeps the response uncacheable even
 # when Cache-Control grants public freshness.
 url_no_store="${base_url}/surrogate-nostore"

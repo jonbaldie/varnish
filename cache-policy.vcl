@@ -213,37 +213,54 @@ sub vcl_backend_response {
         return (deliver);
     }
 
-    # An Expires value that is not a valid HTTP-date — especially the common
-    # "0", and also "-1" or any unparseable string — means already expired
-    # (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value as an absent
-    # header and falls back to default_ttl, so the invalid form has to be
-    # recognised here, for every URL and not just static ones. Cache-Control
-    # max-age/s-maxage overrides Expires entirely (RFC 9111 §5.3), so an
-    # invalid Expires alongside either directive is ignored.
-    if (beresp.http.Expires &&
-        beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
-        beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$") {
-        set beresp.uncacheable = true;
-        set beresp.ttl = 120s;
-        return (deliver);
-    }
-
-    if (bereq.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
-        # Apply the static TTL only when the origin granted positive
-        # freshness. Zero freshness (max-age=0, s-maxage=0, or an Expires
-        # date in the past) must stay hit-for-miss, as builtin
-        # vcl_backend_response would do for beresp.ttl <= 0s (RFC 9111 §5.2).
-        # An invalid Expires is already handled above.
-        if (beresp.ttl > 0s) {
-            set beresp.ttl = 1d;
-            set beresp.grace = 7d;
-        } else {
+    # Positive Surrogate-Control freshness takes precedence over Cache-Control,
+    # Expires, and the static-asset TTL policy (W3C Edge Architecture §4.2).
+    # The optional +N freshness extension is an explicit stale-serving window;
+    # without it, stale objects must be refetched immediately.
+    if (beresp.http.Surrogate-Control ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*") {
+        set beresp.ttl = std.duration(
+            regsub(beresp.http.Surrogate-Control,
+                "(?i).*(?:^|[,;\s])\s*max-age\s*=\s*([0-9]+)(?:\+([0-9]+))?.*",
+                "\1s"),
+            0s);
+        set beresp.grace = std.duration(
+            regsub(beresp.http.Surrogate-Control,
+                "(?i).*(?:^|[,;\s])\s*max-age\s*=\s*([0-9]+)(?:\+([0-9]+))?.*",
+                "0\2s"),
+            0s);
+    } else {
+        # An Expires value that is not a valid HTTP-date — especially the common
+        # "0", and also "-1" or any unparseable string — means already expired
+        # (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value as an absent
+        # header and falls back to default_ttl, so the invalid form has to be
+        # recognised here, for every URL and not just static ones. Cache-Control
+        # max-age/s-maxage overrides Expires entirely (RFC 9111 §5.3), so an
+        # invalid Expires alongside either directive is ignored.
+        if (beresp.http.Expires &&
+            beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
+            beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$") {
             set beresp.uncacheable = true;
             set beresp.ttl = 120s;
             return (deliver);
         }
-    } else {
-        set beresp.grace = 1h;
+
+        if (bereq.url ~ "(?i)^[^?]*\.(css|js|png|jpg|jpeg|gif|ico|svg|webp|avif|woff|woff2|ttf|eot|otf|mp3|ogg|webm|gz|tgz|bz2|tbz)(\?|$)") {
+            # Apply the static TTL only when the origin granted positive
+            # freshness. Zero freshness (max-age=0, s-maxage=0, or an Expires
+            # date in the past) must stay hit-for-miss, as builtin
+            # vcl_backend_response would do for beresp.ttl <= 0s (RFC 9111 §5.2).
+            # An invalid Expires is already handled above.
+            if (beresp.ttl > 0s) {
+                set beresp.ttl = 1d;
+                set beresp.grace = 7d;
+            } else {
+                set beresp.uncacheable = true;
+                set beresp.ttl = 120s;
+                return (deliver);
+            }
+        } else {
+            set beresp.grace = 1h;
+        }
     }
 
     if (beresp.status >= 500 && beresp.status < 600) {
@@ -253,10 +270,12 @@ sub vcl_backend_response {
 
     # RFC 9111 §5.2.2.2, §5.2.2.8, §5.2.2.10: Stale responses must not be served
     # without origin revalidation when prohibited by must-revalidate or
-    # proxy-revalidate (or s-maxage, which implies proxy-revalidate). Setting
-    # beresp.grace to 0s forces synchronous origin validation once stale and
-    # returns a 503 gateway error if origin is unreachable.
-    if (beresp.http.Cache-Control ~ "(?i)(?:^|[,;\s])\s*(?:(?:must-revalidate|proxy-revalidate)(?:$|[,;\s])|s-maxage\s*=)") {
+    # proxy-revalidate (or s-maxage, which implies proxy-revalidate). A positive
+    # Surrogate-Control max-age supersedes Cache-Control for this surrogate.
+    # Setting grace=0 forces synchronous revalidation and returns 503 if the
+    # origin is unavailable.
+    if (beresp.http.Surrogate-Control !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
+        beresp.http.Cache-Control ~ "(?i)(?:^|[,;\s])\s*(?:(?:must-revalidate|proxy-revalidate)(?:$|[,;\s])|s-maxage\s*=)") {
         set beresp.grace = 0s;
     }
 

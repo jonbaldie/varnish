@@ -498,6 +498,18 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if clean_path == "/static/surrogate-short.css":
+            self.respond(
+                200,
+                "asset=surrogate-short.css\n",
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Surrogate-Control": "max-age=2",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+            return
+
         if clean_path == "/static/app.css":
             cookie_state = "present" if cookie_header else "none"
             body = f"asset=app.css\ncookie={cookie_state}\n"
@@ -556,6 +568,34 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        # Short-lived surrogate freshness grants must override both a private
+        # Cache-Control policy and a longer downstream max-age.
+        if clean_path in (
+            "/surrogate-short-private",
+            "/surrogate-short-public",
+            "/surrogate-short-normalized",
+            "/surrogate-short-extended",
+        ):
+            if clean_path == "/surrogate-short-private":
+                cache_control = "private, no-store"
+            elif clean_path == "/surrogate-short-extended":
+                cache_control = "public, max-age=3600, must-revalidate"
+            else:
+                cache_control = "public, max-age=3600"
+            surrogate_control = {
+                "/surrogate-short-normalized": 'content="ESI/1.0"; MAX-AGE = 0002',
+                "/surrogate-short-extended": "max-age=2+3",
+            }.get(clean_path, "max-age=2")
+            self.respond(
+                200,
+                f"route={clean_path[1:]}\n",
+                extra_headers={
+                    "Surrogate-Control": surrogate_control,
+                    "Cache-Control": cache_control,
+                },
+            )
+            return
+
         # Genuine surrogate freshness grant: Surrogate-Control with max-age
         # overrides Cache-Control for the shared cache by design.
         if clean_path == "/surrogate-fresh":
@@ -606,6 +646,17 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in zero_surrogate_headers:
             body = f"route={clean_path[1:]}\n"
             self.respond(200, body, extra_headers=zero_surrogate_headers[clean_path])
+            return
+
+        # A positive surrogate max-age takes precedence over an invalid Expires,
+        # which would otherwise mark the response already expired.
+        if clean_path == "/surrogate-fresh-invalid-expires":
+            body = "route=surrogate-fresh-invalid-expires\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Surrogate-Control": "max-age=60", "Expires": "0"},
+            )
             return
 
         # Surrogate-Control no-store: the surrogate itself must not store,
