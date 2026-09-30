@@ -43,6 +43,9 @@ run_referenced_invalidation_case() {
     assert_header_contains "${prefix}-mutation" "$ref_header" "$expected_ref" "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
+    if [[ "$expected_ref" == *" "* ]]; then
+        assert_no_space_ban_syntax_errors
+    fi
 
     http_request "${prefix}-after" "${base_url}${target_path}"
     assert_http_status "${prefix}-after" 200 "GET ${prefix} target after ${method}"
@@ -148,7 +151,51 @@ run_variant_port_invalidation_case() {
     echo "OK: ${variant_host} Location invalidated the bare-host target"
 }
 
+assert_no_space_ban_syntax_errors() {
+    local varnish_id
+    local varnish_log
+
+    varnish_id="$(docker ps \
+        --filter "label=com.docker.compose.project=${TEST_PROJECT:?TEST_PROJECT must be set}" \
+        --filter "label=com.docker.compose.service=varnish" \
+        --format '{{.ID}}' \
+        | head -n 1)"
+    varnish_log="$(docker exec "$varnish_id" varnishlog -d -g raw -i VCL_Error)"
+
+    if grep -Fq 'ban(): Expected && between conditions' <<<"$varnish_log"; then
+        echo "FAIL: Varnish logged a ban syntax error for an unencoded-space reference"
+        printf '%s\n' "$varnish_log"
+        exit 1
+    fi
+}
+
 case_id="$(openssl rand -hex 4)"
+
+echo "Testing unencoded spaces in Location and Content-Location references..."
+run_referenced_invalidation_case \
+    space-query-post \
+    POST \
+    "/create-space-location?case=${case_id}-space-query" \
+    "/location-target?search=hello%20world&case=${case_id}-space-query" \
+    "Location" \
+    "/location-target?search=hello world&case=${case_id}-space-query" \
+    201
+run_referenced_invalidation_case \
+    space-query-absolute-post \
+    POST \
+    "/create-abs-space-location?case=${case_id}-space-absolute" \
+    "/location-target?search=hello%20world&case=${case_id}-space-absolute" \
+    "Location" \
+    "http://localhost:8091/location-target?search=hello world&case=${case_id}-space-absolute" \
+    201
+run_referenced_invalidation_case \
+    content-loc-space-path-put \
+    PUT \
+    "/create-content-location-space?case=${case_id}-space-path" \
+    "/content-location-target/${case_id}-space-path%20Doc%201" \
+    "Content-Location" \
+    "/content-location-target/${case_id}-space-path Doc 1" \
+    200
 
 echo "Testing absolute empty-path query Location and Content-Location invalidation..."
 run_empty_path_query_invalidation_case \

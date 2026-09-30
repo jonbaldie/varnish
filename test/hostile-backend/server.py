@@ -130,7 +130,9 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        if clean_path == "/content-location-target":
+        if clean_path == "/content-location-target" or clean_path.startswith(
+            "/content-location-target/"
+        ):
             body = "route=content-location-target\n"
             self.respond(
                 200,
@@ -183,6 +185,9 @@ class Handler(BaseHTTPRequestHandler):
         # run exercises cache objects unique to that run.
         if clean_path in (
             "/create-rel",
+            "/create-space-location",
+            "/create-abs-space-location",
+            "/create-content-location-space",
             "/create-abs",
             "/create-abs-query",
             "/create-authority-only",
@@ -205,6 +210,36 @@ class Handler(BaseHTTPRequestHandler):
                 if clean_path == "/create-rel":
                     extra = {"Location": f"/location-target{suffix}"}
                     self.respond(201, "route=create-rel\n", extra_headers=extra)
+                elif clean_path == "/create-space-location":
+                    case = query.removeprefix("case=")
+                    extra = {
+                        "Location": f"/location-target?search=hello world&case={case}"
+                    }
+                    self.respond(
+                        201, "route=create-space-location\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-abs-space-location":
+                    case = query.removeprefix("case=")
+                    extra = {
+                        "Location": (
+                            f"http://{host}/location-target?search=hello world&case={case}"
+                        )
+                    }
+                    self.respond(
+                        201,
+                        "route=create-abs-space-location\n",
+                        extra_headers=extra,
+                    )
+                elif clean_path == "/create-content-location-space":
+                    case = query.removeprefix("case=")
+                    extra = {
+                        "Content-Location": f"/content-location-target/{case} Doc 1"
+                    }
+                    self.respond(
+                        200,
+                        "route=create-content-location-space\n",
+                        extra_headers=extra,
+                    )
                 elif clean_path == "/create-abs":
                     extra = {"Location": f"http://{host}/location-target{suffix}"}
                     self.respond(201, "route=create-abs\n", extra_headers=extra)
