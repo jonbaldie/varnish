@@ -144,6 +144,11 @@ sub invalidate_reference {
             regsub(beresp.http.X-Varnish-Cache-Ref, "#.*$", "");
     }
 
+    # The ban expression parser treats whitespace as token separators. Encode
+    # spaces in URI references so they match the percent-encoded request URL.
+    set beresp.http.X-Varnish-Cache-Ref-URL =
+        regsuball(beresp.http.X-Varnish-Cache-Ref-URL, " ", "%20");
+
     # Only a reference sharing the request's host identity may invalidate:
     # the cache has no authority over other hosts' entries.
     if (beresp.http.X-Varnish-Cache-Ref-Host == bereq.http.host) {
