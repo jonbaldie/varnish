@@ -11,9 +11,29 @@ base_url="http://localhost:${HOSTILE_SCENARIO_PORT:-8089}"
 # grants surrogate freshness (max-age). A bare ESI capability advertisement
 # (content="ESI/1.0") must NOT disable Cache-Control: private/no-store.
 
-# The exact bug scenario from the issue: the origin marks the response
-# private + no-store and also advertises ESI capability. The shared cache
-# must still treat it as uncacheable (hit-for-miss).
+assert_zero_surrogate_freshness_is_uncacheable() {
+  local label="$1"
+  local path="$2"
+  local url="${base_url}${path}"
+  local first_id
+
+  http_request "purge-${label}" "$url" -X PURGE
+  assert_http_status "purge-${label}" 200 "${label} PURGE"
+
+  http_request "${label}-1" "$url"
+  assert_http_status "${label}-1" 200 "${label} first request"
+  assert_cache_state "${label}-1" MISS "${label} first request"
+  first_id="$(assert_origin_request_id_present "${label}-1" "${label} first request")"
+
+  http_request "${label}-2" "$url"
+  assert_http_status "${label}-2" 200 "${label} second request"
+  assert_cache_state "${label}-2" MISS "${label} second request"
+  assert_different_origin_request_id "${label}-2" "$first_id" "${label} second request"
+  echo "OK: ${label} stayed hit-for-miss"
+}
+
+# The origin marks the response private + no-store and advertises ESI
+# capability. The shared cache must still treat it as uncacheable.
 url_private_esi="${base_url}/private-esi"
 
 http_request purge-private-esi "$url_private_esi" -X PURGE
@@ -81,24 +101,14 @@ assert_cache_state no-store-2 MISS "surrogate-nostore second request"
 assert_different_origin_request_id no-store-2 "$no_store_id" "surrogate-nostore second request"
 echo "OK: Surrogate-Control no-store stayed hit-for-miss"
 
-# Control: a zero Surrogate-Control max-age grants the surrogate nothing,
-# so Cache-Control: private stays in force despite the origin's own
-# max-age=3600.
-url_zero="${base_url}/surrogate-zero-maxage"
-http_request purge-zero "$url_zero" -X PURGE
-assert_http_status purge-zero 200 "surrogate-zero-maxage PURGE"
-
-echo "Requesting /surrogate-zero-maxage for the first time (expects MISS)..."
-http_request zero-1 "$url_zero"
-assert_http_status zero-1 200 "surrogate-zero-maxage first request"
-assert_cache_state zero-1 MISS "surrogate-zero-maxage first request"
-zero_id="$(assert_origin_request_id_present zero-1 "surrogate-zero-maxage first request")"
-
-echo "Requesting /surrogate-zero-maxage again (must not be served from cache)..."
-http_request zero-2 "$url_zero"
-assert_http_status zero-2 200 "surrogate-zero-maxage second request"
-assert_cache_state zero-2 MISS "surrogate-zero-maxage second request"
-assert_different_origin_request_id zero-2 "$zero_id" "surrogate-zero-maxage second request"
-echo "OK: Surrogate-Control max-age=0 stayed hit-for-miss"
+# Zero surrogate freshness must keep objects out of the shared cache even
+# when downstream Cache-Control grants freshness or is omitted.
+assert_zero_surrogate_freshness_is_uncacheable zero-public /surrogate-zero-maxage
+assert_zero_surrogate_freshness_is_uncacheable zero-plain /surrogate-zero-maxage-plain
+assert_zero_surrogate_freshness_is_uncacheable zero-no-cache-control /surrogate-zero-maxage-no-cache-control
+assert_zero_surrogate_freshness_is_uncacheable zero-plus-zero /surrogate-zero-maxage-plus-zero
+assert_zero_surrogate_freshness_is_uncacheable zero-padded /surrogate-zero-maxage-zero-padded
+assert_zero_surrogate_freshness_is_uncacheable zero-esi-after /surrogate-zero-maxage-esi-after
+assert_zero_surrogate_freshness_is_uncacheable zero-esi-before /surrogate-zero-maxage-esi-before
 
 echo "=== All hostile Surrogate-Control tests passed ==="
