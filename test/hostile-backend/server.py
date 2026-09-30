@@ -574,17 +574,18 @@ class Handler(BaseHTTPRequestHandler):
             "/surrogate-short-private",
             "/surrogate-short-public",
             "/surrogate-short-normalized",
+            "/surrogate-short-extended",
         ):
-            cache_control = (
-                "private, no-store"
-                if clean_path == "/surrogate-short-private"
-                else "public, max-age=3600"
-            )
-            surrogate_control = (
-                'content="ESI/1.0"; MAX-AGE = 0002'
-                if clean_path == "/surrogate-short-normalized"
-                else "max-age=2"
-            )
+            if clean_path == "/surrogate-short-private":
+                cache_control = "private, no-store"
+            elif clean_path == "/surrogate-short-extended":
+                cache_control = "public, max-age=3600, must-revalidate"
+            else:
+                cache_control = "public, max-age=3600"
+            surrogate_control = {
+                "/surrogate-short-normalized": 'content="ESI/1.0"; MAX-AGE = 0002',
+                "/surrogate-short-extended": "max-age=2+3",
+            }.get(clean_path, "max-age=2")
             self.respond(
                 200,
                 f"route={clean_path[1:]}\n",
@@ -645,6 +646,17 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in zero_surrogate_headers:
             body = f"route={clean_path[1:]}\n"
             self.respond(200, body, extra_headers=zero_surrogate_headers[clean_path])
+            return
+
+        # A positive surrogate max-age takes precedence over an invalid Expires,
+        # which would otherwise mark the response already expired.
+        if clean_path == "/surrogate-fresh-invalid-expires":
+            body = "route=surrogate-fresh-invalid-expires\n"
+            self.respond(
+                200,
+                body,
+                extra_headers={"Surrogate-Control": "max-age=60", "Expires": "0"},
+            )
             return
 
         # Surrogate-Control no-store: the surrogate itself must not store,
