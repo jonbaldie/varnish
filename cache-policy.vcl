@@ -246,6 +246,18 @@ sub vcl_backend_response {
         set beresp.grace = 1h;
     }
 
+    # Surrogate-Control max-age is the surrogate freshness lifetime, even when
+    # Cache-Control or the static-asset policy assigned a different TTL. Do not
+    # extend that lifetime by serving the object from Varnish's grace window.
+    if (beresp.http.Surrogate-Control ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*") {
+        set beresp.ttl = std.duration(
+            regsub(beresp.http.Surrogate-Control,
+                "(?i).*(?:^|[,;\s])\s*max-age\s*=\s*0*([1-9][0-9]*).*",
+                "\1s"),
+            beresp.ttl);
+        set beresp.grace = 0s;
+    }
+
     if (beresp.status >= 500 && beresp.status < 600) {
         set beresp.ttl = 0s;
         set beresp.grace = 24h;

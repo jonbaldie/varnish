@@ -498,6 +498,18 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if clean_path == "/static/surrogate-short.css":
+            self.respond(
+                200,
+                "asset=surrogate-short.css\n",
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Surrogate-Control": "max-age=2",
+                    "Cache-Control": "public, max-age=3600",
+                },
+            )
+            return
+
         if clean_path == "/static/app.css":
             cookie_state = "present" if cookie_header else "none"
             body = f"asset=app.css\ncookie={cookie_state}\n"
@@ -552,6 +564,33 @@ class Handler(BaseHTTPRequestHandler):
                 extra_headers={
                     "Surrogate-Control": 'content="ESI/1.0"',
                     "Cache-Control": "private, no-store",
+                },
+            )
+            return
+
+        # Short-lived surrogate freshness grants must override both a private
+        # Cache-Control policy and a longer downstream max-age.
+        if clean_path in (
+            "/surrogate-short-private",
+            "/surrogate-short-public",
+            "/surrogate-short-normalized",
+        ):
+            cache_control = (
+                "private, no-store"
+                if clean_path == "/surrogate-short-private"
+                else "public, max-age=3600"
+            )
+            surrogate_control = (
+                'content="ESI/1.0"; MAX-AGE = 0002'
+                if clean_path == "/surrogate-short-normalized"
+                else "max-age=2"
+            )
+            self.respond(
+                200,
+                f"route={clean_path[1:]}\n",
+                extra_headers={
+                    "Surrogate-Control": surrogate_control,
+                    "Cache-Control": cache_control,
                 },
             )
             return

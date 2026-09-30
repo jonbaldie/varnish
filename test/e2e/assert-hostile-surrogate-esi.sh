@@ -82,6 +82,42 @@ assert_cache_state grant-2 HIT "surrogate-fresh second request"
 assert_same_origin_request_id grant-2 "$grant_id" "surrogate-fresh second request"
 echo "OK: Surrogate-Control max-age grant still cacheable and served as HIT"
 
+assert_positive_surrogate_freshness_expires() {
+  local label="$1"
+  local path="$2"
+  local url="${base_url}${path}"
+  local first_id
+
+  http_request "purge-${label}" "$url" -X PURGE
+  assert_http_status "purge-${label}" 200 "${label} PURGE"
+
+  http_request "${label}-1" "$url"
+  assert_http_status "${label}-1" 200 "${label} first request"
+  assert_cache_state "${label}-1" MISS "${label} first request"
+  first_id="$(assert_origin_request_id_present "${label}-1" "${label} first request")"
+
+  http_request "${label}-2" "$url"
+  assert_http_status "${label}-2" 200 "${label} request within surrogate max-age"
+  assert_cache_state "${label}-2" HIT "${label} request within surrogate max-age"
+  assert_same_origin_request_id "${label}-2" "$first_id" "${label} request within surrogate max-age"
+
+  echo "Waiting 3s for ${label} Surrogate-Control max-age=2 to expire..."
+  sleep 3
+  http_request "${label}-3" "$url"
+  assert_http_status "${label}-3" 200 "${label} request after surrogate max-age"
+  assert_cache_state "${label}-3" MISS "${label} request after surrogate max-age"
+  assert_different_origin_request_id "${label}-3" "$first_id" "${label} request after surrogate max-age"
+}
+
+# Positive Surrogate-Control freshness sets beresp.ttl even when a private
+# Cache-Control policy or a longer downstream max-age would otherwise apply.
+assert_positive_surrogate_freshness_expires short-private /surrogate-short-private
+assert_positive_surrogate_freshness_expires short-public /surrogate-short-public
+assert_positive_surrogate_freshness_expires short-normalized /surrogate-short-normalized
+assert_positive_surrogate_freshness_expires short-static /static/surrogate-short.css
+
+echo "OK: positive Surrogate-Control max-age controls the surrogate TTL"
+
 # Control: Surrogate-Control no-store keeps the response uncacheable even
 # when Cache-Control grants public freshness.
 url_no_store="${base_url}/surrogate-nostore"
