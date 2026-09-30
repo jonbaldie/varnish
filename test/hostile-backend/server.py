@@ -535,18 +535,42 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        # Zero surrogate freshness: max-age=0 grants the surrogate nothing,
-        # so Cache-Control: private stays in force.
-        if clean_path == "/surrogate-zero-maxage":
-            body = "route=surrogate-zero-maxage\n"
-            self.respond(
-                200,
-                body,
-                extra_headers={
-                    "Surrogate-Control": "max-age=0",
-                    "Cache-Control": "private, max-age=3600",
-                },
-            )
+        # Zero surrogate freshness must override positive downstream freshness
+        # in Cache-Control and keep the response out of the shared cache. These
+        # variants also cover an omitted Cache-Control header, zero extensions,
+        # leading zeros, and ESI capability tokens on either side of max-age.
+        zero_surrogate_headers = {
+            "/surrogate-zero-maxage": {
+                "Surrogate-Control": "max-age=0",
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-plain": {
+                "Surrogate-Control": "max-age=0",
+                "Cache-Control": "max-age=3600",
+            },
+            "/surrogate-zero-maxage-no-cache-control": {
+                "Surrogate-Control": "max-age=0",
+            },
+            "/surrogate-zero-maxage-plus-zero": {
+                "Surrogate-Control": "max-age=0+0",
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-zero-padded": {
+                "Surrogate-Control": "max-age=00",
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-esi-after": {
+                "Surrogate-Control": 'content="ESI/1.0", max-age=0',
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-esi-before": {
+                "Surrogate-Control": 'max-age=0, content="ESI/1.0"',
+                "Cache-Control": "public, max-age=3600",
+            },
+        }
+        if clean_path in zero_surrogate_headers:
+            body = f"route={clean_path[1:]}\n"
+            self.respond(200, body, extra_headers=zero_surrogate_headers[clean_path])
             return
 
         # Surrogate-Control no-store: the surrogate itself must not store,
