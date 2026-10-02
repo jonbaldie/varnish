@@ -17,6 +17,9 @@ zero_freshness_urls=(
   "${base_url}/static/zero-smaxage.css"
   "${base_url}/static/past-expires.css"
   "${base_url}/static/expires-zero.css"
+  "${base_url}/static/expires-epoch-rfc1123.css"
+  "${base_url}/static/expires-epoch-rfc850.css"
+  "${base_url}/static/expires-epoch-asctime.css"
   "${base_url}/static/expires-minus-one.css"
   "${base_url}/static/expires-invalid.css"
 )
@@ -56,6 +59,8 @@ fresh_urls=(
   "${base_url}/static/app.css"
   "${base_url}/static/future-expires.css"
   "${base_url}/static/maxage-over-invalid-expires.css"
+  "${base_url}/static/maxage-over-epoch-expires.css"
+  "${base_url}/static/smaxage-over-epoch-expires.css"
 )
 
 for url in "${fresh_urls[@]}"; do
@@ -78,17 +83,18 @@ for url in "${fresh_urls[@]}"; do
   echo "OK: $asset still cached and served as HIT"
 done
 
-# Invalid Expires on a non-static URL. RFC 9111 §5.3 requires an unparseable
-# date, especially "0", to be read as already expired, so an HTML page carrying
-# one must stay hit-for-miss instead of inheriting default_ttl.
+# Invalid and Unix Epoch Expires on a non-static URL. RFC 9111 §5.3 requires
+# both to be read as already expired, so a page carrying one must stay
+# hit-for-miss instead of inheriting default_ttl.
 
-invalid_expires_pages=(
+expired_expires_pages=(
   "${base_url}/page/expires-zero"
   "${base_url}/page/expires-minus-one"
   "${base_url}/page/expires-invalid"
+  "${base_url}/page/expires-epoch"
 )
 
-for url in "${invalid_expires_pages[@]}"; do
+for url in "${expired_expires_pages[@]}"; do
   page="$(basename "$url")"
 
   http_request purge-page-"$page" "$url" -X PURGE
