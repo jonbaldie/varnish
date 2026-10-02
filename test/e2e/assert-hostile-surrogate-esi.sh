@@ -188,6 +188,9 @@ assert_zero_surrogate_freshness_is_uncacheable zero-public /surrogate-zero-maxag
 assert_zero_surrogate_freshness_is_uncacheable zero-plain /surrogate-zero-maxage-plain
 assert_zero_surrogate_freshness_is_uncacheable zero-no-cache-control /surrogate-zero-maxage-no-cache-control
 assert_zero_surrogate_freshness_is_uncacheable zero-plus-zero /surrogate-zero-maxage-plus-zero
+assert_zero_surrogate_freshness_is_uncacheable zero-plus-window /surrogate-zero-maxage-plus-window
+assert_zero_surrogate_freshness_is_uncacheable zero-plus-window-no-cache-control /surrogate-zero-maxage-plus-window-no-cache-control
+assert_zero_surrogate_freshness_is_uncacheable zero-plus-window-static /static/surrogate-zero-window.css
 assert_zero_surrogate_freshness_is_uncacheable zero-padded /surrogate-zero-maxage-zero-padded
 assert_zero_surrogate_freshness_is_uncacheable zero-esi-after /surrogate-zero-maxage-esi-after
 assert_zero_surrogate_freshness_is_uncacheable zero-esi-before /surrogate-zero-maxage-esi-before
