@@ -121,17 +121,15 @@ sub vcl_backend_response {
         # date in the past) must stay hit-for-miss, as builtin
         # vcl_backend_response would do for beresp.ttl <= 0s (RFC 9111 §5.2).
         #
-        # An Expires value that is not a valid HTTP-date — especially the
-        # common "0", and also "-1" or any unparseable string — means already
-        # expired (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value
-        # as an absent header and falls back to default_ttl, so the invalid
-        # form has to be recognised here. Cache-Control max-age/s-maxage
-        # overrides Expires entirely (RFC 9111 §5.3), so an invalid Expires
-        # alongside either directive is ignored.
+        # Invalid Expires values and Unix Epoch HTTP-dates are already
+        # expired (RFC 9111 §5.3), even though the valid epoch forms leave the
+        # parser's TTL unchanged. Cache-Control max-age/s-maxage overrides
+        # Expires, so either directive bypasses these expiration checks.
         if (beresp.ttl > 0s &&
             !(beresp.http.Expires &&
-              beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:s-)?max-age\s*=" &&
-              beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$")) {
+              beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:max-age|s-maxage)\s*=" &&
+              (beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$" ||
+               beresp.http.Expires ~ "(?i)^\s*(?:Thu, 01 Jan 1970 00:00:00 GMT|Thursday, 01-Jan-70 00:00:00 GMT|Thu Jan  +1 00:00:00 1970)\s*$"))) {
             set beresp.ttl = 1d;
             set beresp.grace = 7d;
         } else {

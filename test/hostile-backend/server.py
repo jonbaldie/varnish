@@ -354,24 +354,24 @@ class Handler(BaseHTTPRequestHandler):
                 )
             return
 
-        # Non-static pages whose origin sends an invalid Expires value.
-        # RFC 9111 §5.3: an invalid date format, especially the value "0",
-        # means already expired. Varnish's RFC2616_Ttl treats these as an
-        # absent header and falls back to default_ttl, so the shared cache
-        # policy must recognise them for every URL, not just static ones.
-        invalid_expires_pages = {
+        # Non-static pages whose origin sends an invalid or Unix Epoch Expires
+        # value. RFC 9111 §5.3 treats both as already expired. Varnish's
+        # RFC2616_Ttl treats values parsing to 0 as absent and falls back to
+        # default_ttl, so the shared cache policy must recognise them too.
+        expired_expires_pages = {
             "/page/expires-zero": "0",
             "/page/expires-minus-one": "-1",
             "/page/expires-invalid": "not-a-date",
+            "/page/expires-epoch": "Thu, 01 Jan 1970 00:00:00 GMT",
         }
-        if clean_path in invalid_expires_pages:
+        if clean_path in expired_expires_pages:
             page = clean_path.rsplit("/", 1)[-1]
             body = f"page={page}\n"
             self.respond(
                 200,
                 body,
                 content_type="text/html; charset=utf-8",
-                extra_headers={"Expires": invalid_expires_pages[clean_path]},
+                extra_headers={"Expires": expired_expires_pages[clean_path]},
             )
             return
 
@@ -447,23 +447,49 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
-        # Invalid Expires values. RFC 9111 §5.3: a cache MUST interpret an
-        # invalid date format, especially the value "0", as already expired.
-        # Varnish's RFC2616_Ttl treats these as an absent header and falls
-        # back to default_ttl, so the shared cache policy must recognise them.
-        invalid_expires = {
+        # Invalid and Unix Epoch Expires values. RFC 9111 §5.3 treats both as
+        # already expired. Varnish's RFC2616_Ttl treats values parsing to 0 as
+        # absent and falls back to default_ttl, so the shared policy must
+        # recognise each HTTP-date form as well as unparseable values.
+        expired_expires = {
             "/static/expires-zero.css": "0",
             "/static/expires-minus-one.css": "-1",
             "/static/expires-invalid.css": "not-a-date",
+            "/static/expires-epoch-rfc1123.css": "Thu, 01 Jan 1970 00:00:00 GMT",
+            "/static/expires-epoch-rfc850.css": "Thursday, 01-Jan-70 00:00:00 GMT",
+            "/static/expires-epoch-asctime.css": "Thu Jan  1 00:00:00 1970",
         }
-        if clean_path in invalid_expires:
+        if clean_path in expired_expires:
             asset = clean_path.rsplit("/", 1)[-1]
             body = f"asset={asset}\n"
             self.respond(
                 200,
                 body,
                 content_type="text/css; charset=utf-8",
-                extra_headers={"Expires": invalid_expires[clean_path]},
+                extra_headers={"Expires": expired_expires[clean_path]},
+            )
+            return
+
+        # Cache-Control freshness overrides an epoch Expires date (RFC 9111
+        # §5.3), for both shared and general cache max-age directives.
+        epoch_expires_with_cache_control = {
+            "/static/maxage-over-epoch-expires.css": (
+                "public, max-age=3600",
+                "Thu, 01 Jan 1970 00:00:00 GMT",
+            ),
+            "/static/smaxage-over-epoch-expires.css": (
+                "public, s-maxage=3600",
+                "Thu, 01 Jan 1970 00:00:00 GMT",
+            ),
+        }
+        if clean_path in epoch_expires_with_cache_control:
+            asset = clean_path.rsplit("/", 1)[-1]
+            cache_control, expires = epoch_expires_with_cache_control[clean_path]
+            self.respond(
+                200,
+                f"asset={asset}\n",
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Cache-Control": cache_control, "Expires": expires},
             )
             return
 
