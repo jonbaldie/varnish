@@ -638,8 +638,9 @@ class Handler(BaseHTTPRequestHandler):
 
         # Zero surrogate freshness must override positive downstream freshness
         # in Cache-Control and keep the response out of the shared cache. These
-        # variants also cover an omitted Cache-Control header, zero extensions,
-        # leading zeros, and ESI capability tokens on either side of max-age.
+        # variants also cover an omitted Cache-Control header, freshness
+        # extensions (+0 and positive stale windows), static assets, leading
+        # zeros, and ESI capability tokens on either side of max-age.
         zero_surrogate_headers = {
             "/surrogate-zero-maxage": {
                 "Surrogate-Control": "max-age=0",
@@ -654,6 +655,17 @@ class Handler(BaseHTTPRequestHandler):
             },
             "/surrogate-zero-maxage-plus-zero": {
                 "Surrogate-Control": "max-age=0+0",
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-plus-window": {
+                "Surrogate-Control": "max-age=0+30",
+                "Cache-Control": "public, max-age=3600",
+            },
+            "/surrogate-zero-maxage-plus-window-no-cache-control": {
+                "Surrogate-Control": "max-age=0+10",
+            },
+            "/static/surrogate-zero-window.css": {
+                "Surrogate-Control": "max-age=00+30",
                 "Cache-Control": "public, max-age=3600",
             },
             "/surrogate-zero-maxage-zero-padded": {
