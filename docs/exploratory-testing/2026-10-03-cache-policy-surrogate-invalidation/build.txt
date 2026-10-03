@@ -1,0 +1,5 @@
+commit 3392a553a3e0b330df8a4565559a8fbb21658aae
+image sha256:5ad228b3ee4ffea6f510f398d5d1955d0e4b9708ac5b4
+base debian:bookworm-slim
+varnish 7.1.1-1~deb12u1
+date 2026-10-03

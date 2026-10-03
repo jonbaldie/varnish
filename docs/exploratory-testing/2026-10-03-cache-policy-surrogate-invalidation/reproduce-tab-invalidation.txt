@@ -1,0 +1,23 @@
+Starting isolated test topology on port 18790...
+Waiting for Varnish on port 18790...
+1. Priming cache for /report%09data...
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.12.15
+X-Origin-N: 3
+X-Cache: MISS
+2. Second GET (expect HIT)...
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.12.15
+X-Origin-N: 3
+X-Cache: HIT
+3. Sending POST mutation with Location containing HTAB (\t)...
+HTTP/1.1 201 Created
+Location: /report	data
+X-Cache: MISS
+4. Checking Varnish log for VCL_Error:
+     32774 VCL_Error      b ban(): Expected && between conditions, found "data"
+5. Third GET for target (Expected: MISS because unsafe POST should invalidate Location target; Actual: HIT):
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.12.15
+X-Origin-N: 3
+X-Cache: HIT
