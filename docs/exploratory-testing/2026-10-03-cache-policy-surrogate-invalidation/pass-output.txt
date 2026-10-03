@@ -1,0 +1,28 @@
+=== Starting Exploratory Testing Pass (2026-10-03, run 84b8d9ed) ===
+
+--- Journey 1: Surrogate-Control & Freshness Hierarchy ---
+1.1 Surrogate-Control: max-age=10 -> Req1: MISS, Req2: HIT
+1.2 Surrogate overrides CC private/no-store -> Req1: MISS, Req2: HIT
+1.3 Surrogate-Control: max-age=2+10 -> Req1: MISS, Req2: HIT
+1.4 Surrogate-Control: max-age=0 -> Req1: MISS, Req2: MISS
+1.5 Surrogate-Control: max-age=0+10 -> Req1: MISS, Req2: MISS
+1.6 Surrogate ESI advertisement with CC private -> Req1: MISS, Req2: MISS
+1.7 Static asset default policy -> Req1: MISS, Req2: HIT
+1.8 Static asset with CC max-age=0 -> Req1: MISS, Req2: MISS
+1.9 Expires: 1970 Epoch -> Req1: MISS, Req2: MISS
+
+--- Journey 2: Backend Sickness, Health Probes, and Grace ---
+2.1 Normal resource with expired TTL during backend outage -> Status: 200, X-Cache: HIT
+2.2 must-revalidate resource during backend outage -> Status: 503, X-Cache: MISS
+2.3 Uncached resource during backend outage -> Status: 503
+
+--- Journey 3: Unsafe Mutations and Invalidation Reference Resolution ---
+3.1 POST self-invalidation -> After: MISS
+3.2 POST with Location: /84b8d9ed/j3/loc-target -> After: MISS
+3.3 PUT with Content-Location: /84b8d9ed/j3/cl-target -> After: MISS
+3.4 POST with space in Location: /84b8d9ed/j3/space target -> After: MISS
+3.5 [CONFIRMED BUG] Varnish VCL_Error on HTAB in Location:      98337 VCL_Error      b ban(): Expected && between conditions, found "target"
+    Target after POST: X-Cache: HIT (Expected: MISS, Actual: HIT)
+3.6 [CONFIRMED BUG] Varnish VCL_Error on HTAB in Content-Location:      98343 VCL_Error      b ban(): Expected && between conditions, found "target"
+    Target after PUT: X-Cache: HIT (Expected: MISS, Actual: HIT)
+3.7 POST with 303 Location PRG invalidation -> After: MISS
