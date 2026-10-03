@@ -104,7 +104,7 @@ assert_project_is_clean "$failure_project"
 timeout_project="${project_prefix}-readiness-timeout"
 echo "=== Compose fixture lifecycle: readiness timeout diagnostics and cleanup ==="
 set +e
-run_fixture "$timeout_project" 2 "$url/not-ready" -- true >"$tmpdir/readiness-timeout.log" 2>&1
+run_fixture "$timeout_project" 10 "$url/not-ready" -- true >"$tmpdir/readiness-timeout.log" 2>&1
 timeout_status=$?
 set -e
 if [ "$timeout_status" -eq 0 ]; then
@@ -112,7 +112,7 @@ if [ "$timeout_status" -eq 0 ]; then
   cat "$tmpdir/readiness-timeout.log" >&2
   exit 1
 fi
-grep -Fq 'Services did not become ready within 2s' "$tmpdir/readiness-timeout.log" || {
+grep -Fq 'Services did not become ready within 10s' "$tmpdir/readiness-timeout.log" || {
   echo "FAIL: readiness timeout should explain the configured deadline" >&2
   cat "$tmpdir/readiness-timeout.log" >&2
   exit 1
