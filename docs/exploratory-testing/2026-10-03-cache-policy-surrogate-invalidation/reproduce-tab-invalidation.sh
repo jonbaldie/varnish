@@ -47,5 +47,5 @@ print('\n'.join(l for l in resp.split('\r\n') if l.startswith('HTTP/') or l.lowe
 echo "4. Checking Varnish log for VCL_Error:"
 docker exec "$VARNISH" varnishlog -d -g raw -i VCL_Error || true
 
-echo "5. Third GET for target (Expected: MISS because unsafe POST should invalidate Location target; Actual: HIT):"
+echo "5. Third GET for target (Expected: MISS after Location target invalidation):"
 curl -s -i "http://localhost:$PORT/report%09data" | grep -E "(HTTP/|X-Cache|X-Origin-N)"

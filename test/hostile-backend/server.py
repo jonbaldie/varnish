@@ -186,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path in (
             "/create-rel",
             "/create-space-location",
+            "/create-tab-location",
+            "/create-content-location-tab",
             "/create-abs-space-location",
             "/create-content-location-space",
             "/create-abs",
@@ -217,6 +219,22 @@ class Handler(BaseHTTPRequestHandler):
                     }
                     self.respond(
                         201, "route=create-space-location\n", extra_headers=extra
+                    )
+                elif clean_path == "/create-tab-location":
+                    case = query.removeprefix("case=")
+                    extra = {
+                        "Location": f"/location-target?tab=1\t2&case={case}"
+                    }
+                    self.respond(201, "route=create-tab-location\n", extra_headers=extra)
+                elif clean_path == "/create-content-location-tab":
+                    case = query.removeprefix("case=")
+                    extra = {
+                        "Content-Location": f"/content-location-target/{case}\tdata"
+                    }
+                    self.respond(
+                        200,
+                        "route=create-content-location-tab\n",
+                        extra_headers=extra,
                     )
                 elif clean_path == "/create-abs-space-location":
                     case = query.removeprefix("case=")
