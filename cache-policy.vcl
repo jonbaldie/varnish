@@ -144,8 +144,10 @@ sub invalidate_reference {
             regsub(beresp.http.X-Varnish-Cache-Ref, "#.*$", "");
     }
 
-    # The ban expression parser treats whitespace as token separators. Encode
-    # spaces in URI references so they match the percent-encoded request URL.
+    # The ban expression parser treats horizontal whitespace as token
+    # separators. Encode HTAB and spaces so references match request URLs.
+    set beresp.http.X-Varnish-Cache-Ref-URL =
+        regsuball(beresp.http.X-Varnish-Cache-Ref-URL, "\t", "%09");
     set beresp.http.X-Varnish-Cache-Ref-URL =
         regsuball(beresp.http.X-Varnish-Cache-Ref-URL, " ", "%20");
 

@@ -43,8 +43,8 @@ run_referenced_invalidation_case() {
     assert_header_contains "${prefix}-mutation" "$ref_header" "$expected_ref" "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
-    if [[ "$expected_ref" == *" "* ]]; then
-        assert_no_space_ban_syntax_errors
+    if [[ "$expected_ref" == *" "* || "$expected_ref" == *$'\t'* ]]; then
+        assert_no_reference_ban_syntax_errors
     fi
 
     http_request "${prefix}-after" "${base_url}${target_path}"
@@ -190,7 +190,7 @@ run_variant_port_invalidation_case() {
     echo "OK: ${variant_host} Location invalidated the bare-host target"
 }
 
-assert_no_space_ban_syntax_errors() {
+assert_no_reference_ban_syntax_errors() {
     local varnish_id
     local varnish_log
 
@@ -202,13 +202,14 @@ assert_no_space_ban_syntax_errors() {
     varnish_log="$(docker exec "$varnish_id" varnishlog -d -g raw -i VCL_Error)"
 
     if grep -Fq 'ban(): Expected && between conditions' <<<"$varnish_log"; then
-        echo "FAIL: Varnish logged a ban syntax error for an unencoded-space reference"
+        echo "FAIL: Varnish logged a ban syntax error for an unencoded-whitespace reference"
         printf '%s\n' "$varnish_log"
         exit 1
     fi
 }
 
 case_id="$(openssl rand -hex 4)"
+tab="$(printf '\t')"
 
 echo "Testing successful unsafe-method target invalidation beyond the common verbs..."
 run_target_invalidation_case \
@@ -283,6 +284,24 @@ run_referenced_invalidation_case \
     "/content-location-target/${case_id}-space-path%20Doc%201" \
     "Content-Location" \
     "/content-location-target/${case_id}-space-path Doc 1" \
+    200
+
+echo "Testing horizontal tabs in Location and Content-Location references..."
+run_referenced_invalidation_case \
+    tab-query-location-post \
+    POST \
+    "/create-tab-location?case=${case_id}-tab-query" \
+    "/location-target?tab=1%092&case=${case_id}-tab-query" \
+    "Location" \
+    "/location-target?tab=1${tab}2&case=${case_id}-tab-query" \
+    201
+run_referenced_invalidation_case \
+    content-loc-tab-path-put \
+    PUT \
+    "/create-content-location-tab?case=${case_id}-tab-path" \
+    "/content-location-target/${case_id}-tab-path%09data" \
+    "Content-Location" \
+    "/content-location-target/${case_id}-tab-path${tab}data" \
     200
 
 echo "Testing absolute empty-path query Location and Content-Location invalidation..."
