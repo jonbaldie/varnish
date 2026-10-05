@@ -10,7 +10,7 @@ Default role labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for
 
 ### Domain docs
 
-Single-context: root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: root `GLOSSARY.md` and `docs/adr/`. See `docs/agents/domain.md`.
 
 ## Testing
 - Use red/green TDD. 
