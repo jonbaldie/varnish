@@ -37,13 +37,13 @@ def main():
     print("******************************************************************\n")
 
     # Step 1: Start python backend on 127.0.0.1:8080
-    print("[1/5] Initializing Campaign Origin Backend on 127.0.0.1:8080...")
+    print("[1/2] Initializing Campaign Origin Backend on 127.0.0.1:8080...")
     backend = start_backend(8080)
     time.sleep(1)
 
     # Step 2: Start Varnish through the image's runtime start interface,
     # with a bounded thread pool to respect resource caps
-    print("[2/5] Starting Varnish via /start.sh on 127.0.0.1:80...")
+    print("[2/2] Starting Varnish via /start.sh on 127.0.0.1:80...")
     env = os.environ.copy()
     # start.sh refuses VARNISH_START alongside the other VARNISH_* variables.
     env.pop("VARNISH_START", None)
