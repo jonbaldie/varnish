@@ -3,6 +3,7 @@
 
 import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -23,32 +24,47 @@ CAMPAIGN_ENV = {
 }
 
 
-def start_varnish(overrides=None):
-    """Run /start.sh with the campaign environment; it execs varnishd -F."""
-    env = os.environ.copy()
-    # start.sh refuses VARNISH_START combined with the variables set here.
-    env.pop("VARNISH_START", None)
-    env.update(CAMPAIGN_ENV)
-    env.update(overrides or {})
-    return subprocess.Popen(
-        ["/start.sh"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-    )
+class CampaignVarnish:
+    """A /start.sh process, which execs varnishd -F in place."""
 
+    def __init__(self, overrides=None):
+        env = os.environ.copy()
+        # start.sh refuses VARNISH_START combined with the variables set here.
+        env.pop("VARNISH_START", None)
+        env.update(CAMPAIGN_ENV)
+        env.update(overrides or {})
+        # A file rather than a pipe, so a long run can't block varnishd on a full
+        # pipe; stdout passes through to the campaign log.
+        self._stderr = tempfile.TemporaryFile()
+        self._proc = subprocess.Popen(["/start.sh"], env=env, stderr=self._stderr)
 
-def wait_until_ready(proc, url, timeout=20):
-    """Return None once url serves 200, else a message describing the failure."""
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if proc.poll() is not None:
-            break
-        try:
-            with urllib.request.urlopen(url, timeout=2) as resp:
-                if resp.status == 200:
-                    return None
-        except Exception:
-            pass
-        time.sleep(0.5)
-    if proc.poll() is None:
-        return f"no HTTP 200 from {url} within {timeout}s"
-    _, err = proc.communicate()
-    return f"/start.sh exited with code {proc.returncode}: {err.decode()}"
+    @property
+    def pid(self):
+        return self._proc.pid
+
+    def wait_until_ready(self, url, timeout=20):
+        """Return None once url serves 200, else a message describing the failure."""
+        deadline = time.time() + timeout
+        while time.time() < deadline and self._proc.poll() is None:
+            try:
+                with urllib.request.urlopen(url, timeout=2) as resp:
+                    if resp.status == 200:
+                        return None
+            except Exception:
+                pass
+            time.sleep(0.5)
+        if self._proc.poll() is None:
+            return f"no HTTP 200 from {url} within {timeout}s"
+        self._stderr.seek(0)
+        err = self._stderr.read().decode(errors="replace")
+        return f"/start.sh exited with code {self._proc.returncode}: {err}"
+
+    def stop(self):
+        if self._proc.poll() is None:
+            self._proc.terminate()
+            try:
+                self._proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait()
+        self._stderr.close()

@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 from backend import start_backend
-from varnish_runtime import start_varnish, wait_until_ready
+from varnish_runtime import CampaignVarnish
 
 READY_URL = "http://127.0.0.1:80/ready"
 
@@ -32,27 +32,30 @@ def param_value(name):
     fail(f"no value in param.show {name}: {out}")
 
 
-def stop(proc):
-    if proc.poll() is None:
-        proc.terminate()
-        proc.wait(timeout=10)
+def flag_value(cmdline, flag):
+    if flag not in cmdline:
+        fail(f"varnishd was started without {flag}: {cmdline}")
+    return cmdline[cmdline.index(flag) + 1]
 
 
 def check_starts_with_campaign_parameters():
-    # An inherited VARNISH_START would make start.sh refuse the other variables.
+    # The campaign must strip an inherited VARNISH_START, which start.sh refuses
+    # to combine with the VARNISH_* variables the campaign sets.
     os.environ["VARNISH_START"] = "false"
-    proc = start_varnish()
+    varnish = CampaignVarnish()
     try:
-        error = wait_until_ready(proc, READY_URL, timeout=20)
+        error = varnish.wait_until_ready(READY_URL, timeout=20)
         if error:
             fail(f"campaign Varnish did not start: {error}")
 
-        cmdline = open(f"/proc/{proc.pid}/cmdline").read().split("\0")
+        with open(f"/proc/{varnish.pid}/cmdline") as f:
+            cmdline = f.read().split("\0")
         if not cmdline[0].endswith("varnishd"):
-            fail(f"start.sh did not exec varnishd; pid {proc.pid} runs {cmdline}")
+            fail(f"start.sh did not exec varnishd; pid {varnish.pid} runs {cmdline}")
         for flag, value in (("-a", "127.0.0.1:80"), ("-s", "malloc,256m")):
-            if cmdline[cmdline.index(flag) + 1] != value:
-                fail(f"varnishd {flag} is {cmdline[cmdline.index(flag) + 1]}, expected {value}")
+            actual = flag_value(cmdline, flag)
+            if actual != value:
+                fail(f"varnishd {flag} is {actual}, expected {value}")
 
         expected = {
             "thread_pools": "1",
@@ -70,21 +73,21 @@ def check_starts_with_campaign_parameters():
             fail(f"vsl_mask still masks Hash records: {vsl_mask}")
         print("OK: start.sh ran varnishd with the campaign listen, storage and parameters")
     finally:
-        stop(proc)
+        varnish.stop()
         del os.environ["VARNISH_START"]
 
 
 def check_reports_start_script_errors():
-    proc = start_varnish({"VARNISH_STORAGE": "malloc"})
+    varnish = CampaignVarnish({"VARNISH_STORAGE": "malloc"})
     try:
-        error = wait_until_ready(proc, READY_URL, timeout=20)
+        error = varnish.wait_until_ready(READY_URL, timeout=20)
         if error is None:
             fail("Varnish became ready despite an invalid VARNISH_STORAGE")
         if "Invalid VARNISH_STORAGE 'malloc'" not in error:
             fail(f"start.sh error missing from report: {error}")
         print(f"OK: invalid VARNISH_STORAGE reported: {error.strip()}")
     finally:
-        stop(proc)
+        varnish.stop()
 
 
 def main():

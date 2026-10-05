@@ -6,7 +6,7 @@ import sys
 import time
 
 from backend import start_backend
-from varnish_runtime import start_varnish, wait_until_ready
+from varnish_runtime import CampaignVarnish
 import test_static_analysis
 import test_properties
 import test_stateful
@@ -25,11 +25,11 @@ def main():
 
     # Step 2: Start Varnish through the image's runtime start interface
     print("[2/2] Starting Varnish via /start.sh on 127.0.0.1:80 (origin 127.0.0.1:8080)...")
-    varnish_proc = start_varnish()
+    varnish = CampaignVarnish()
 
     try:
         print("Waiting for Varnish HTTP readiness...")
-        error = wait_until_ready(varnish_proc, "http://127.0.0.1:80/ready", timeout=20)
+        error = varnish.wait_until_ready("http://127.0.0.1:80/ready", timeout=20)
         if error:
             print(f"Varnish did not become ready: {error}")
             sys.exit(1)
@@ -76,9 +76,7 @@ def main():
 
     finally:
         print("\nTearing down test processes...")
-        if varnish_proc.poll() is None:
-            varnish_proc.terminate()
-            varnish_proc.wait(timeout=5)
+        varnish.stop()
 
 if __name__ == "__main__":
     main()
