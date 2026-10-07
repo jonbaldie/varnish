@@ -233,18 +233,25 @@ sub vcl_backend_response {
                 "0\2s"),
             0s);
     } else {
-        # An Expires value that is not a valid HTTP-date — especially the common
-        # "0", and also "-1" or any unparseable string — means already expired
-        # (RFC 9111 §5.3). Varnish's RFC2616_Ttl treats such a value as an absent
-        # header and falls back to default_ttl. It also leaves the TTL untouched
-        # when a valid Expires date parses to 0, which affects the three Unix
-        # Epoch HTTP-date forms below. Recognise both cases here for every URL,
-        # not just static ones. Cache-Control max-age/s-maxage overrides Expires
-        # entirely (RFC 9111 §5.3), so either form is ignored alongside them.
+        # An Expires value that is not a valid HTTP-date means already expired
+        # (RFC 9111 §5.3). That includes "0", "-1", unparseable strings, and
+        # HTTP-dates whose month, day, time, or day-of-week is invalid — for
+        # example "Thu, 01 Foo 2026 00:00:00 GMT" or "Sun, 01 Jan 2026
+        # 00:00:00 GMT" (1 Jan 2026 was a Thursday). A character-class shape
+        # check accepts those tokens, so Varnish's parser must decide.
+        # RFC2616_Ttl treats a parse failure as an absent header and falls
+        # back to default_ttl. It also leaves the TTL untouched when a valid
+        # Expires date parses to 0, which is every Unix Epoch HTTP-date.
+        # std.time uses that same parser and returns the fallback both for a
+        # failure and for the epoch. Two different fallbacks tell failure
+        # apart from a valid date that happens to equal one sentinel.
+        # Cache-Control max-age/s-maxage overrides Expires entirely (RFC 9111
+        # §5.3), so either directive skips this check. Apply it to every URL,
+        # not just static ones.
         if (beresp.http.Expires &&
             beresp.http.Cache-Control !~ "(?i)(?:^|[,;\s])\s*(?:max-age|s-maxage)\s*=" &&
-            (beresp.http.Expires !~ "^\s*(?:[A-Za-z]{3}, [0-9]{2} [A-Za-z]{3} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{6,9}, [0-9]{2}-[A-Za-z]{3}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT|[A-Za-z]{3} [A-Za-z]{3} [ 0-9][0-9] [0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4})\s*$" ||
-             beresp.http.Expires ~ "(?i)^\s*(?:Thu, 01 Jan 1970 00:00:00 GMT|Thursday, 01-Jan-70 00:00:00 GMT|Thu Jan  +1 00:00:00 1970)\s*$")) {
+            std.time(beresp.http.Expires, now) == now &&
+            std.time(beresp.http.Expires, std.time("Thu, 01 Jan 1970 00:00:01 GMT", now)) == std.time("Thu, 01 Jan 1970 00:00:01 GMT", now)) {
             set beresp.uncacheable = true;
             set beresp.ttl = 120s;
             return (deliver);

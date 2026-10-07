@@ -22,6 +22,15 @@ zero_freshness_urls=(
   "${base_url}/static/expires-epoch-asctime.css"
   "${base_url}/static/expires-minus-one.css"
   "${base_url}/static/expires-invalid.css"
+  "${base_url}/static/expires-bad-month.css"
+  "${base_url}/static/expires-bad-day.css"
+  "${base_url}/static/expires-bad-time.css"
+  "${base_url}/static/expires-bad-dow.css"
+  "${base_url}/static/expires-dow-mismatch.css"
+  "${base_url}/static/expires-bad-rfc850.css"
+  "${base_url}/static/expires-bad-asctime.css"
+  "${base_url}/static/expires-bad-case.css"
+  "${base_url}/static/expires-feb31.css"
 )
 
 for url in "${zero_freshness_urls[@]}"; do
@@ -61,6 +70,10 @@ fresh_urls=(
   "${base_url}/static/maxage-over-invalid-expires.css"
   "${base_url}/static/maxage-over-epoch-expires.css"
   "${base_url}/static/smaxage-over-epoch-expires.css"
+  "${base_url}/static/expires-future-imf.css"
+  "${base_url}/static/expires-future-rfc850.css"
+  "${base_url}/static/expires-future-asctime.css"
+  "${base_url}/static/maxage-over-bad-expires.css"
 )
 
 for url in "${fresh_urls[@]}"; do
@@ -92,6 +105,11 @@ expired_expires_pages=(
   "${base_url}/page/expires-minus-one"
   "${base_url}/page/expires-invalid"
   "${base_url}/page/expires-epoch"
+  "${base_url}/page/expires-bad-month"
+  "${base_url}/page/expires-bad-day"
+  "${base_url}/page/expires-bad-time"
+  "${base_url}/page/expires-bad-dow"
+  "${base_url}/page/expires-dow-mismatch"
 )
 
 for url in "${expired_expires_pages[@]}"; do
@@ -127,6 +145,8 @@ done
 fresh_pages=(
   "${base_url}/page/future-expires"
   "${base_url}/page/maxage-over-invalid-expires"
+  "${base_url}/page/expires-future-imf"
+  "${base_url}/page/maxage-over-bad-expires"
 )
 
 for url in "${fresh_pages[@]}"; do
