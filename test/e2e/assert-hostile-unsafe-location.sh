@@ -44,7 +44,7 @@ run_referenced_invalidation_case() {
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
     if [[ "$expected_ref" == *" "* || "$expected_ref" == *$'\t'* ]]; then
-        assert_no_reference_ban_syntax_errors
+        assert_no_vcl_errors "${method} ${ref_header} reference containing unencoded whitespace"
     fi
 
     http_request "${prefix}-after" "${base_url}${target_path}"
@@ -188,24 +188,6 @@ run_variant_port_invalidation_case() {
     assert_cache_state "${prefix}-after" MISS "GET ${prefix} target after POST"
     assert_different_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after POST"
     echo "OK: ${variant_host} Location invalidated the bare-host target"
-}
-
-assert_no_reference_ban_syntax_errors() {
-    local varnish_id
-    local varnish_log
-
-    varnish_id="$(docker ps \
-        --filter "label=com.docker.compose.project=${TEST_PROJECT:?TEST_PROJECT must be set}" \
-        --filter "label=com.docker.compose.service=varnish" \
-        --format '{{.ID}}' \
-        | head -n 1)"
-    varnish_log="$(docker exec "$varnish_id" varnishlog -d -g raw -i VCL_Error)"
-
-    if grep -Fq 'ban(): Expected && between conditions' <<<"$varnish_log"; then
-        echo "FAIL: Varnish logged a ban syntax error for an unencoded-whitespace reference"
-        printf '%s\n' "$varnish_log"
-        exit 1
-    fi
 }
 
 case_id="$(openssl rand -hex 4)"

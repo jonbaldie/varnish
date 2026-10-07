@@ -99,6 +99,16 @@ grep -Fq 'Restoring fixture service: fixture-web' "$tmpdir/assertion-failure.log
   cat "$tmpdir/assertion-failure.log" >&2
   exit 1
 }
+grep -Fq -- '--- Varnish runtime diagnostics (VCL_Error, FetchError, Backend_health) ---' "$tmpdir/assertion-failure.log" || {
+  echo "FAIL: assertion failure should include a Varnish runtime diagnostics section" >&2
+  cat "$tmpdir/assertion-failure.log" >&2
+  exit 1
+}
+grep -Fq "No Varnish container found for Compose fixture $failure_project; skipping runtime log dump." "$tmpdir/assertion-failure.log" || {
+  echo "FAIL: assertion failure without Varnish should explain why runtime logs were skipped" >&2
+  cat "$tmpdir/assertion-failure.log" >&2
+  exit 1
+}
 assert_project_is_clean "$failure_project"
 
 timeout_project="${project_prefix}-readiness-timeout"
@@ -119,6 +129,16 @@ grep -Fq 'Services did not become ready within 10s' "$tmpdir/readiness-timeout.l
 }
 grep -Fq 'GET /not-ready HTTP/1.1' "$tmpdir/readiness-timeout.log" || {
   echo "FAIL: readiness timeout should include Compose service logs" >&2
+  cat "$tmpdir/readiness-timeout.log" >&2
+  exit 1
+}
+grep -Fq -- '--- Varnish runtime diagnostics (VCL_Error, FetchError, Backend_health) ---' "$tmpdir/readiness-timeout.log" || {
+  echo "FAIL: readiness failure should include a Varnish runtime diagnostics section" >&2
+  cat "$tmpdir/readiness-timeout.log" >&2
+  exit 1
+}
+grep -Fq "No Varnish container found for Compose fixture $timeout_project; skipping runtime log dump." "$tmpdir/readiness-timeout.log" || {
+  echo "FAIL: readiness failure without Varnish should explain why runtime logs were skipped" >&2
   cat "$tmpdir/readiness-timeout.log" >&2
   exit 1
 }
