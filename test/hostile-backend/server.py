@@ -381,6 +381,14 @@ class Handler(BaseHTTPRequestHandler):
             "/page/expires-minus-one": "-1",
             "/page/expires-invalid": "not-a-date",
             "/page/expires-epoch": "Thu, 01 Jan 1970 00:00:00 GMT",
+            # Shape-matching but invalid HTTP-dates. RFC 9111 §5.3 treats
+            # these as already expired; a structural regex is not enough.
+            "/page/expires-bad-month": "Thu, 01 Foo 2026 00:00:00 GMT",
+            "/page/expires-bad-day": "Thu, 99 Jan 2026 00:00:00 GMT",
+            "/page/expires-bad-time": "Thu, 01 Jan 2026 99:99:99 GMT",
+            "/page/expires-bad-dow": "Xyz, 01 Jan 2026 00:00:00 GMT",
+            # 1 Jan 2026 was a Thursday, so Sunday is a mismatched day-of-week.
+            "/page/expires-dow-mismatch": "Sun, 01 Jan 2026 00:00:00 GMT",
         }
         if clean_path in expired_expires_pages:
             page = clean_path.rsplit("/", 1)[-1]
@@ -390,6 +398,33 @@ class Handler(BaseHTTPRequestHandler):
                 body,
                 content_type="text/html; charset=utf-8",
                 extra_headers={"Expires": expired_expires_pages[clean_path]},
+            )
+            return
+
+        # Control: the acceptance date is a real future IMF-fixdate (1 Jan
+        # 2027 was a Friday) and must still be cached.
+        if clean_path == "/page/expires-future-imf":
+            body = "page=expires-future-imf\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/html; charset=utf-8",
+                extra_headers={"Expires": "Fri, 01 Jan 2027 00:00:00 GMT"},
+            )
+            return
+
+        # Control: Cache-Control max-age overrides a shape-matching invalid
+        # Expires (RFC 9111 §5.3).
+        if clean_path == "/page/maxage-over-bad-expires":
+            body = "page=maxage-over-bad-expires\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/html; charset=utf-8",
+                extra_headers={
+                    "Cache-Control": "public, max-age=3600",
+                    "Expires": "Thu, 01 Foo 2026 00:00:00 GMT",
+                },
             )
             return
 
@@ -476,6 +511,15 @@ class Handler(BaseHTTPRequestHandler):
             "/static/expires-epoch-rfc1123.css": "Thu, 01 Jan 1970 00:00:00 GMT",
             "/static/expires-epoch-rfc850.css": "Thursday, 01-Jan-70 00:00:00 GMT",
             "/static/expires-epoch-asctime.css": "Thu Jan  1 00:00:00 1970",
+            "/static/expires-bad-month.css": "Thu, 01 Foo 2026 00:00:00 GMT",
+            "/static/expires-bad-day.css": "Thu, 99 Jan 2026 00:00:00 GMT",
+            "/static/expires-bad-time.css": "Thu, 01 Jan 2026 99:99:99 GMT",
+            "/static/expires-bad-dow.css": "Xyz, 01 Jan 2026 00:00:00 GMT",
+            "/static/expires-dow-mismatch.css": "Sun, 01 Jan 2026 00:00:00 GMT",
+            "/static/expires-bad-rfc850.css": "Thursday, 99-Jan-26 00:00:00 GMT",
+            "/static/expires-bad-asctime.css": "Thu Foo  1 00:00:00 2026",
+            "/static/expires-bad-case.css": "fri, 01 jan 2027 00:00:00 gmt",
+            "/static/expires-feb31.css": "Tue, 31 Feb 2026 00:00:00 GMT",
         }
         if clean_path in expired_expires:
             asset = clean_path.rsplit("/", 1)[-1]
@@ -511,6 +555,21 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        fresh_http_dates = {
+            "/static/expires-future-imf.css": "Fri, 01 Jan 2027 00:00:00 GMT",
+            "/static/expires-future-rfc850.css": "Friday, 01-Jan-27 00:00:00 GMT",
+            "/static/expires-future-asctime.css": "Fri Jan  1 00:00:00 2027",
+        }
+        if clean_path in fresh_http_dates:
+            asset = clean_path.rsplit("/", 1)[-1]
+            self.respond(
+                200,
+                f"asset={asset}\n",
+                content_type="text/css; charset=utf-8",
+                extra_headers={"Expires": fresh_http_dates[clean_path]},
+            )
+            return
+
         # Control: a valid HTTP-date in the future is real freshness, and a
         # static asset carrying one must still be cached.
         if clean_path == "/static/future-expires.css":
@@ -538,6 +597,20 @@ class Handler(BaseHTTPRequestHandler):
                 extra_headers={
                     "Cache-Control": "public, max-age=600",
                     "Expires": "0",
+                },
+            )
+            return
+
+        # Shape-matching invalid Expires must not override Cache-Control.
+        if clean_path == "/static/maxage-over-bad-expires.css":
+            body = "asset=maxage-over-bad-expires.css\n"
+            self.respond(
+                200,
+                body,
+                content_type="text/css; charset=utf-8",
+                extra_headers={
+                    "Cache-Control": "public, max-age=3600",
+                    "Expires": "Thu, 01 Foo 2026 00:00:00 GMT",
                 },
             )
             return
