@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/varnish-container.sh"
+
 response_headers_path() {
     printf '%s/%s.headers\n' "${TEST_TMPDIR:?TEST_TMPDIR must be set}" "$1"
 }
@@ -68,12 +70,7 @@ http_request() {
         local host_header
         local loopback_url
 
-        varnish_container="$(
-            docker ps \
-                --filter "label=com.docker.compose.project=${TEST_PROJECT:?TEST_PROJECT must be set}" \
-                --format '{{.ID}} {{.Label "com.docker.compose.service"}}' \
-                | awk '$2 ~ /^varnish/ { print $1; exit }'
-        )"
+        varnish_container="$(find_varnish_container "${TEST_PROJECT:?TEST_PROJECT must be set}")"
 
         if [ -z "$varnish_container" ]; then
             echo "FAIL: Could not find Varnish container for project $TEST_PROJECT"
@@ -134,6 +131,47 @@ assert_http_status() {
         fail_response_assertion \
             "expected ${context} HTTP ${expected_status}, got ${actual_status:-missing}" \
             "$name"
+    fi
+}
+
+assert_no_vcl_errors() {
+    if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+        echo "FAIL: assert_no_vcl_errors requires a context and optional fixed-string pattern" >&2
+        exit 2
+    fi
+
+    local context="$1"
+    local project="${TEST_PROJECT:?TEST_PROJECT must be set}"
+    local pattern="${2-}"
+    local varnish_container
+    local varnish_log
+    local matching_logs
+
+    varnish_container="$(find_varnish_container "$project")"
+    if [ -z "$varnish_container" ]; then
+        echo "FAIL: ${context}: could not find Varnish container for project ${project}" >&2
+        exit 1
+    fi
+
+    if ! varnish_log="$(docker exec "$varnish_container" varnishlog -d -g raw -i VCL_Error)"; then
+        echo "FAIL: ${context}: could not read Varnish VCL_Error log for project ${project}" >&2
+        exit 1
+    fi
+
+    if [ "$#" -eq 2 ]; then
+        matching_logs="$(printf '%s\n' "$varnish_log" | grep -F -- "$pattern" || true)"
+    else
+        matching_logs="$varnish_log"
+    fi
+
+    if [ -n "$matching_logs" ]; then
+        if [ "$#" -eq 2 ]; then
+            echo "FAIL: ${context}: unexpected Varnish VCL_Error records matching '${pattern}'" >&2
+        else
+            echo "FAIL: ${context}: unexpected Varnish VCL_Error records" >&2
+        fi
+        printf '%s\n' "$matching_logs" >&2
+        exit 1
     fi
 }
 

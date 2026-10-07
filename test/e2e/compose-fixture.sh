@@ -2,6 +2,7 @@
 set -euo pipefail
 
 script_path="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+source "$(dirname "$script_path")/varnish-container.sh"
 fixture_project=""
 fixture_compose_files=()
 fixture_restore_services=()
@@ -42,6 +43,30 @@ fixture_compose() {
     args+=(-f "$compose_file")
   done
   docker compose "${args[@]}" "$@"
+}
+
+fixture_dump_vsl() {
+  local varnish_container
+  echo "--- Varnish runtime diagnostics (VCL_Error, FetchError, Backend_health) ---" >&2
+
+  if ! varnish_container="$(find_varnish_container "${COMPOSE_FIXTURE_PROJECT:?}")"; then
+    echo "FAIL: could not find a Varnish container for Compose fixture ${COMPOSE_FIXTURE_PROJECT}" >&2
+    return 0
+  fi
+  if [ -z "$varnish_container" ]; then
+    echo "No Varnish container found for Compose fixture ${COMPOSE_FIXTURE_PROJECT}; skipping runtime log dump." >&2
+    return 0
+  fi
+
+  if ! docker exec "$varnish_container" varnishlog -d -g raw -i VCL_Error,FetchError,Backend_health >&2; then
+    echo "FAIL: could not read Varnish runtime logs from container ${varnish_container}" >&2
+  fi
+}
+
+fixture_dump_failure_diagnostics() {
+  echo "--- Compose service logs ---" >&2
+  fixture_compose logs >&2 || true
+  fixture_dump_vsl
 }
 
 fixture_cleanup() {
@@ -171,23 +196,26 @@ compose_fixture_run() {
   local compose_file_list
   compose_file_list="$(IFS=:; echo "${fixture_compose_files[*]}")"
   export COMPOSE_FILE="$compose_file_list"
-  if [ -n "$project" ]; then
-    fixture_project="$project"
-    export COMPOSE_PROJECT_NAME="$project"
-  else
-    fixture_project=""
-  fi
-  export COMPOSE_FIXTURE_ACTIVE=true
-  export COMPOSE_FIXTURE_PROJECT="${project:-${COMPOSE_PROJECT_NAME:-}}"
-  export COMPOSE_FIXTURE_SCRIPT="$script_path"
-  export COMPOSE_FIXTURE_READINESS_URL="$readiness_url"
-  export COMPOSE_FIXTURE_TIMEOUT="$timeout"
-  export COMPOSE_FIXTURE_CURL_TIMEOUT="$curl_timeout"
   if [ "${#env_assignments[@]}" -gt 0 ]; then
     for assignment in "${env_assignments[@]}"; do
       export "$assignment"
     done
   fi
+  if [ -n "$project" ]; then
+    fixture_project="$project"
+  elif [ -n "${COMPOSE_PROJECT_NAME:-}" ]; then
+    fixture_project="$COMPOSE_PROJECT_NAME"
+  else
+    fixture_project="$(fixture_compose config --format json | python3 -c 'import json,sys; print(json.load(sys.stdin).get("name", ""))')"
+  fi
+  [ -n "$fixture_project" ] || fail "could not determine Compose fixture project name"
+  export COMPOSE_PROJECT_NAME="$fixture_project"
+  export COMPOSE_FIXTURE_ACTIVE=true
+  export COMPOSE_FIXTURE_PROJECT="$fixture_project"
+  export COMPOSE_FIXTURE_SCRIPT="$script_path"
+  export COMPOSE_FIXTURE_READINESS_URL="$readiness_url"
+  export COMPOSE_FIXTURE_TIMEOUT="$timeout"
+  export COMPOSE_FIXTURE_CURL_TIMEOUT="$curl_timeout"
 
   if [ "${#restore_services[@]}" -gt 0 ]; then
     fixture_restore_services=("${restore_services[@]}")
@@ -198,12 +226,12 @@ compose_fixture_run() {
   if [ "${#services[@]}" -gt 0 ]; then
     if ! fixture_compose up -d --build "${services[@]}"; then
       echo "FAIL: Compose fixture failed to start" >&2
-      fixture_compose logs >&2 || true
+      fixture_dump_failure_diagnostics
       return 1
     fi
   elif ! fixture_compose up -d --build; then
     echo "FAIL: Compose fixture failed to start" >&2
-    fixture_compose logs >&2 || true
+    fixture_dump_failure_diagnostics
     return 1
   fi
 
@@ -219,8 +247,13 @@ compose_fixture_run() {
     fi
     if curl -sf --max-time "$request_timeout" "$readiness_url" >/dev/null 2>&1; then
       echo "$ready_message"
-      "${assertion_command[@]}"
-      return $?
+      if "${assertion_command[@]}"; then
+        return 0
+      else
+        local assertion_status=$?
+        fixture_dump_failure_diagnostics
+        return "$assertion_status"
+      fi
     fi
     remaining=$((deadline - SECONDS))
     [ "$remaining" -gt 0 ] || break
@@ -232,7 +265,7 @@ compose_fixture_run() {
   done
 
   echo "FAIL: Services did not become ready within ${timeout}s" >&2
-  fixture_compose logs >&2 || true
+  fixture_dump_failure_diagnostics
   return 1
 }
 
