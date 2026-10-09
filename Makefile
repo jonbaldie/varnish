@@ -56,23 +56,27 @@ test-vcl-compile:
 	@echo "=== Test: VCL compilation ==="
 	@set -euo pipefail; \
 	name="$(CONTAINER_PREFIX)-emb-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
+	docker run --rm --name $$name $(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Embedded VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-emb-config-$$(openssl rand -hex 4)"; \
 	docker run --rm --name $$name \
 		-e VARNISH_BACKEND_HOST=localhost \
 		-e VARNISH_BACKEND_PORT=9090 \
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
-		$(IMAGE) /bin/bash -lc '/usr/local/bin/render-vcl /tmp/backend.vcl && grep -q "\\.host = \"localhost\";" /tmp/backend.vcl && grep -q "\\.port = \"9090\";" /tmp/backend.vcl && grep -q "\\.url = \"/healthz\";" /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
+		$(IMAGE) /bin/bash -lc '/start.sh --check && grep -q "\\.host = \"localhost\";" /etc/varnish/backend.vcl && grep -q "\\.port = \"9090\";" /etc/varnish/backend.vcl && grep -q "\\.url = \"/healthz\";" /etc/varnish/backend.vcl'; \
 	echo "OK: Embedded VCL compiles with configured backend output"; \
 	name="$(CONTAINER_PREFIX)-compose-config-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 $(IMAGE) /bin/bash -lc 'VARNISH_BACKEND_HOST=web VARNISH_BACKEND_PORT=80 VARNISH_BACKEND_PROBE_PATH=/ /usr/local/bin/render-vcl /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
+	docker run --rm --name $$name --add-host web:127.0.0.1 \
+		-e VARNISH_BACKEND_HOST=web -e VARNISH_BACKEND_PORT=80 -e VARNISH_BACKEND_PROBE_PATH=/ \
+		$(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Compose backend adapter VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-hostile-config-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 $(IMAGE) /bin/bash -lc 'VARNISH_BACKEND_HOST=hostile-backend VARNISH_BACKEND_PORT=8080 VARNISH_BACKEND_PROBE_PATH=/ready /usr/local/bin/render-vcl /tmp/backend.vcl && cp /etc/varnish/default.vcl /tmp/default.vcl && sed -i "s#/etc/varnish/backend.vcl#/tmp/backend.vcl#" /tmp/default.vcl && /usr/sbin/varnishd -C -f /tmp/default.vcl >/dev/null 2>&1'; \
+	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 \
+		-e VARNISH_BACKEND_HOST=hostile-backend -e VARNISH_BACKEND_PORT=8080 -e VARNISH_BACKEND_PROBE_PATH=/ready \
+		$(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Hostile backend adapter VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
+	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Repo VCL compiles"; \
 	echo "=== Test: VCL compilation PASSED ==="
 test-smoke:
@@ -136,6 +140,7 @@ test-container-restart:
 
 test-smoke-runtime-interface:
 	@echo "=== Test: Runtime start interface ==="
+	@bash ./test/e2e/assert-config-check.sh $(IMAGE)
 	@set -euo pipefail; \
 	name="$(CONTAINER_PREFIX)-runtime-$$(openssl rand -hex 4)"; \
 	host_port=18081; \
@@ -300,7 +305,7 @@ test-smoke-runtime-interface:
 		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name /usr/sbin/varnishd -C -f /etc/varnish/default.vcl >/dev/null 2>&1; \
+	docker exec $$name /start.sh --check >/dev/null; \
 	docker rm -f $$name >/dev/null; \
 	echo "OK: invalid listen configuration failed clearly"; \
 	echo "=== Test: Runtime start interface PASSED ==="

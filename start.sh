@@ -7,6 +7,25 @@ fail() {
 	exit 1
 }
 
+check_mode=false
+case "$#" in
+	0) ;;
+	1)
+		if [ "$1" = "--check" ]; then
+			check_mode=true
+		else
+			fail "Unknown argument '$1'; expected --check"
+		fi
+		;;
+	*)
+		fail "Unknown arguments '$*'; expected --check or no arguments"
+		;;
+esac
+
+if [ "${check_mode}" = true ] && [ -n "${VARNISH_START:-}" ]; then
+	fail "VARNISH_START cannot be used with --check"
+fi
+
 if [ -n "${VARNISH_START:-}" ]; then
 	# Defaults belong below this branch so they do not look caller-supplied here.
 	if [ -n "${VARNISH_LISTEN:-}" ] || [ -n "${VARNISH_VCL:-}" ] || [ -n "${VARNISH_STORAGE:-}" ] || [ -n "${VARNISH_EXTRA_ARGS:-}" ] || [ -n "${VARNISH_BACKEND_HOST:-}" ] || [ -n "${VARNISH_BACKEND_PORT:-}" ] || [ -n "${VARNISH_BACKEND_PROBE_PATH:-}" ]; then
@@ -77,6 +96,18 @@ args=(
 	-a "${listen}"
 	-s "${storage}"
 )
+
+if [ "${check_mode}" = true ]; then
+	compile_output="$(mktemp)"
+	trap 'rm -f "$compile_output"' EXIT
+	if /usr/sbin/varnishd -C -f "${vcl_path}" >"${compile_output}" 2>&1; then
+		exit 0
+	else
+		compile_status=$?
+		cat "${compile_output}" >&2
+		exit "${compile_status}"
+	fi
+fi
 
 if [ -n "${extra_args}" ]; then
 	read -r -a extra_words <<< "${extra_args}"
