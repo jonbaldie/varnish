@@ -65,6 +65,9 @@ def test_shellcheck():
             else:
                 print(f"[+] Shellcheck clean: {s}")
 
+def check_runtime_config(env):
+    return run_cmd("/start.sh --check", env=env)
+
 def test_render_vcl_ports():
     print("--- Fuzzing render-vcl VARNISH_BACKEND_PORT boundaries ---")
     test_cases = [
@@ -88,29 +91,36 @@ def test_render_vcl_ports():
             env["VARNISH_BACKEND_PORT"] = port
             rc, out, err = run_cmd(f"/usr/local/bin/render-vcl {tmp.name}", env=env)
             
-            if expect_error and rc == 0:
-                # Script succeeded, but does VCL compile?
-                vcl_rc, vcl_out, vcl_err = run_cmd(f"varnishd -C -f {tmp.name}")
-                if vcl_rc != 0:
-                    print(f"[BUG] render-vcl allowed invalid port '{port}' ({label}) producing invalid VCL: {vcl_err.strip()}")
+            if rc == 0:
+                check_rc, check_out, check_err = check_runtime_config(env)
+                compiler_output = (check_out + check_err).strip()
+                if expect_error and check_rc != 0:
+                    print(f"[BUG] render-vcl allowed invalid port '{port}' ({label}); config check failed: {compiler_output}")
                     findings.append(Finding(
                         category="Input Validation / Boundary",
                         name=f"render-vcl allows invalid port: {port}",
-                        description=f"render-vcl permitted VARNISH_BACKEND_PORT='{port}' ({label}), which leads to VCL compilation failure or runtime error: {vcl_err.strip()}",
-                        reproducer=f"VARNISH_BACKEND_PORT='{port}' /usr/local/bin/render-vcl /tmp/test.vcl && varnishd -C -f /tmp/test.vcl",
-                        severity="HIGH" if "injection" in label or int(port) > 65535 or int(port) == 0 else "MEDIUM"
+                        description=f"render-vcl permitted VARNISH_BACKEND_PORT='{port}' ({label}), but the full runtime configuration failed its compile check: {compiler_output}",
+                        reproducer=f"VARNISH_BACKEND_PORT='{port}' /usr/local/bin/render-vcl /tmp/test.vcl && /start.sh --check",
+                        severity="HIGH" if "injection" in label or (port.isdigit() and (int(port) > 65535 or int(port) == 0)) else "MEDIUM"
                     ))
-                else:
-                    # If port 0 or 65536 actually compiled, that's also unexpected for valid TCP
-                    if port in ("0", "65536", "99999999999999"):
-                        findings.append(Finding(
-                            category="Input Validation / Boundary",
-                            name=f"render-vcl allows out-of-range TCP port: {port}",
-                            description=f"VARNISH_BACKEND_PORT='{port}' is out of valid TCP port range (1-65535) but was rendered into VCL without validation",
-                            reproducer=f"VARNISH_BACKEND_PORT='{port}' /usr/local/bin/render-vcl /tmp/test.vcl",
-                            severity="MEDIUM"
-                        ))
-            elif not expect_error and rc != 0:
+                elif expect_error and port in ("0", "65536", "99999999999999"):
+                    findings.append(Finding(
+                        category="Input Validation / Boundary",
+                        name=f"render-vcl allows out-of-range TCP port: {port}",
+                        description=f"VARNISH_BACKEND_PORT='{port}' is out of valid TCP port range (1-65535), but /start.sh --check compiled the full VCL successfully",
+                        reproducer=f"VARNISH_BACKEND_PORT='{port}' /start.sh --check",
+                        severity="MEDIUM"
+                    ))
+                elif not expect_error and check_rc != 0:
+                    print(f"[BUG] Valid port '{port}' ({label}) failed the full runtime config check: {compiler_output}")
+                    findings.append(Finding(
+                        category="VCL Compilation",
+                        name=f"valid backend port fails config check: {port or 'default'}",
+                        description=f"The backend port was accepted by render-vcl but /start.sh --check failed: {compiler_output}",
+                        reproducer=f"VARNISH_BACKEND_PORT='{port}' /start.sh --check",
+                        severity="HIGH"
+                    ))
+            elif not expect_error:
                 print(f"[!] Valid port '{port}' ({label}) was unexpectedly rejected: {err.strip()}")
         finally:
             if os.path.exists(tmp.name):
@@ -145,9 +155,11 @@ def test_render_vcl_host_injections():
                 with open(tmp.name, "r") as f:
                     content = f.read()
 
-                # Test compilation
-                vcl_rc, vcl_out, vcl_err = run_cmd(f"varnishd -C -f {tmp.name}")
-                
+                # Compile the complete runtime VCL using the backend values under test.
+                check_rc, check_out, check_err = check_runtime_config(env)
+                if check_rc != 0:
+                    print(f"[+] /start.sh --check rejected backend host '{host}' ({label}): {(check_out + check_err).strip()}")
+
                 # Check for newline injection: does render-vcl prevent multi-line injection?
                 if "\n" in host and rc == 0:
                     print(f"[BUG] render-vcl does not escape or reject newlines in VARNISH_BACKEND_HOST: '{host}'")
@@ -161,6 +173,32 @@ def test_render_vcl_host_injections():
         finally:
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
+
+def test_config_check_rejects_unresolvable_backend():
+    print("--- Checking runtime VCL compilation with an unresolvable backend ---")
+    env = os.environ.copy()
+    env["VARNISH_BACKEND_HOST"] = "nosuchhost"
+    rc, out, err = check_runtime_config(env)
+    output = out + err
+
+    if rc == 0:
+        findings.append(Finding(
+            category="VCL Compilation",
+            name="config check accepts an unresolvable backend",
+            description="/start.sh --check returned success for VARNISH_BACKEND_HOST=nosuchhost",
+            reproducer="VARNISH_BACKEND_HOST=nosuchhost /start.sh --check",
+            severity="HIGH"
+        ))
+    elif re.search(r"VCC-compiler failed|VCL compilation failed|failed to resolve|could not resolve", output, re.IGNORECASE):
+        print(f"[+] /start.sh --check reported the expected compiler failure: {output.strip()}")
+    else:
+        findings.append(Finding(
+            category="VCL Compilation",
+            name="unresolvable backend check failed without compiler diagnostics",
+            description=f"/start.sh --check exited {rc} for VARNISH_BACKEND_HOST=nosuchhost without reporting a VCC compilation failure: {output.strip()}",
+            reproducer="VARNISH_BACKEND_HOST=nosuchhost /start.sh --check",
+            severity="MEDIUM"
+        ))
 
 def test_start_script_boundaries():
     print("--- Fuzzing start.sh validation logic ---")
@@ -217,6 +255,7 @@ def run_all():
     test_shellcheck()
     test_render_vcl_ports()
     test_render_vcl_host_injections()
+    test_config_check_rejects_unresolvable_backend()
     test_start_script_boundaries()
     print(f"\nPhase 1 Complete. Findings: {len(findings)}")
     return [f.to_dict() for f in findings]

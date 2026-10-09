@@ -39,7 +39,15 @@ The container starts `varnishd` from named runtime values instead of a single ba
 - `VARNISH_STORAGE` defaults to `malloc,1g`
 - `VARNISH_EXTRA_ARGS` appends extra `varnishd` flags when you need a small escape hatch
 
-For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings.
+For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings or checked with `--check`.
+
+Use `/start.sh --check` to validate the runtime settings, render the backend configuration, and compile the selected VCL without starting Varnish. This is the supported preflight for CI and rollout checks:
+
+```bash
+docker compose run --rm varnish /start.sh --check
+```
+
+The start interface accepts no arguments for normal startup or the single `--check` argument; unknown arguments fail with an error instead of being ignored.
 
 Backend configuration also has named values:
 
