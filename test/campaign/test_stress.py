@@ -64,12 +64,20 @@ class StressResult:
     def status(self):
         return "incomplete" if self.reasons else "completed"
 
+    @property
+    def requests(self):
+        return self.workload.requests
+
+    @property
+    def failed_connections(self):
+        return self.workload.failed_connections
+
     def to_dict(self):
         return {
             "status": self.status,
             "reasons": self.reasons,
-            "requests": self.workload.requests,
-            "failed_connections": self.workload.failed_connections,
+            "requests": self.requests,
+            "failed_connections": self.failed_connections,
             "status_distribution": {str(k): v for k, v in sorted(self.workload.statuses.items())},
             "duration_s": round(self.workload.duration, 3),
             "findings": self.findings,

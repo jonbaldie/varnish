@@ -8,7 +8,10 @@ real varnishstat and real sockets; nothing is substituted.
 import json
 import os
 import signal
+import socket
+import subprocess
 import sys
+import tempfile
 import time
 
 from backend import start_backend
@@ -27,7 +30,6 @@ def check(condition, message):
 
 def campaign_runtime(**overrides):
     env = {
-        "VARNISH_LISTEN": f"{HOST}:{PORT}",
         "VARNISH_STORAGE": "malloc,64m",
         "VARNISH_BACKEND_HOST": "127.0.0.1",
         "VARNISH_BACKEND_PORT": "8080",
@@ -57,6 +59,8 @@ def assert_unavailable_runtime_is_incomplete():
         check(snapshot["counters"] == {}, f"{name} carries no defaulted counters")
         collectors = {d["collector"] for d in snapshot["diagnostics"]}
         check("process" in collectors, f"{name} records that the runtime process is not alive")
+        process = [d for d in snapshot["diagnostics"] if d["collector"] == "process"][0]
+        check("Invalid VARNISH_LISTEN" in process["stderr"], f"{name} keeps start.sh's error output")
         stat = [d for d in snapshot["diagnostics"] if d["collector"] == "varnishstat"]
         check(len(stat) == 1, f"{name} records a varnishstat diagnostic")
         check(
@@ -125,13 +129,12 @@ def assert_killed_child_is_a_restart_finding():
         check(initial.available, "initial snapshot is available")
         os.kill(initial.children[0]["pid"], signal.SIGKILL)
         deadline = time.time() + 20
-        final = runtime.snapshot()
-        while time.time() < deadline and not (
-            final.available and final.children[0]["pid"] != initial.children[0]["pid"]
-        ):
+        restarted = runtime.snapshot()
+        while not (restarted.available and restarted.children[0]["pid"] != initial.children[0]["pid"]):
+            check(time.time() < deadline, "manager restarts the child within 20s")
             time.sleep(0.5)
-            final = runtime.snapshot()
-        check(runtime.wait_ready(timeout=20), "manager restarts the child")
+            restarted = runtime.snapshot()
+        check(runtime.wait_ready(timeout=20), "restarted child serves traffic")
         workload = test_stress.run_workload(HOST, PORT, num_requests=10, concurrency=2)
         final = runtime.snapshot()
     finally:
@@ -145,7 +148,36 @@ def assert_killed_child_is_a_restart_finding():
     check("Crash / Child Restart" in categories, "child restart is reported as a finding")
 
 
+def assert_failed_startup_is_persisted():
+    print("=== Orchestrator startup failure: diagnostics reach the campaign report ===")
+    blocker = socket.socket()
+    blocker.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    blocker.bind((HOST, PORT))
+    blocker.listen()
+    report_path = os.path.join(tempfile.mkdtemp(), "report.json")
+    try:
+        proc = subprocess.run(
+            [sys.executable, "orchestrator.py"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            env={**os.environ, "CAMPAIGN_REPORT": report_path},
+            capture_output=True, text=True, timeout=120,
+        )
+    finally:
+        blocker.close()
+
+    check(proc.returncode != 0, "orchestrator exits non-zero when Varnish cannot start")
+    with open(report_path) as fh:
+        report = json.load(fh)
+    startup = report["startup"]
+    check(startup["ready"] is False, "report records that Varnish never became ready")
+    check(startup["snapshot"]["available"] is False, "report records an unavailable startup snapshot")
+    collectors = {d["collector"] for d in startup["snapshot"]["diagnostics"]}
+    check({"process", "varnishstat"} <= collectors, "report keeps process and varnishstat diagnostics")
+    check(startup["snapshot"]["counters"] == {}, "report carries no defaulted counters")
+
+
 def main():
+    assert_failed_startup_is_persisted()
     start_backend(8080)
     assert_unavailable_runtime_is_incomplete()
     assert_healthy_runtime_completes()

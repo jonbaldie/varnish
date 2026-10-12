@@ -2,6 +2,7 @@
 """Master Campaign Orchestrator for Varnish Bug-Finding."""
 
 import json
+import os
 import sys
 import time
 
@@ -11,6 +12,14 @@ import test_static_analysis
 import test_properties
 import test_stateful
 import test_stress
+
+REPORT_PATH = os.environ.get("CAMPAIGN_REPORT", "/campaign/report.json")
+
+
+def write_report(report):
+    with open(REPORT_PATH, "w") as f:
+        json.dump(report, f, indent=2)
+
 
 def main():
     print("******************************************************************")
@@ -28,7 +37,6 @@ def main():
     # the stress phase share this runtime's health snapshots.
     print("[2/2] Starting Varnish via /start.sh on 127.0.0.1:80...")
     runtime = VarnishRuntime.start("127.0.0.1", 80, {
-        "VARNISH_LISTEN": "127.0.0.1:80",
         "VARNISH_STORAGE": "malloc,256m",
         "VARNISH_BACKEND_HOST": "127.0.0.1",
         "VARNISH_BACKEND_PORT": "8080",
@@ -41,19 +49,18 @@ def main():
 
     try:
         print("Waiting for Varnish HTTP readiness...")
-        if not runtime.wait_ready(timeout=20):
-            print("Varnish did not become ready!")
-            failure = runtime.startup_failure()
-            if failure:
-                print(failure)
-            sys.exit(1)
+        ready = runtime.wait_ready(timeout=20)
         startup = runtime.snapshot()
-        if not startup.available:
-            print(f"Varnish runtime health is not measurable: {startup.diagnostics}")
+        startup_report = {"ready": ready, "snapshot": startup.to_dict()}
+        if not ready or not startup.available:
+            print("Varnish did not become ready!" if not ready else "Varnish runtime health is not measurable!")
+            print(json.dumps(startup.diagnostics, indent=2))
+            write_report({"startup": startup_report})
             sys.exit(1)
         print("Varnish is UP and healthy!\n")
 
         all_reports = {
+            "startup": startup_report,
             "phase1_static_and_boundary": [],
             "phase2_cgpt_properties": [],
             "phase3_stateful_sequences": [],
@@ -73,9 +80,7 @@ def main():
         stress = test_stress.run_all(runtime, num_requests=5000, concurrency=20)
         all_reports["phase4_concurrency_stress"] = stress.to_dict()
 
-        # Write final report
-        with open("/campaign/report.json", "w") as f:
-            json.dump(all_reports, f, indent=2)
+        write_report(all_reports)
 
         print("\n" + "="*70)
         print("                 CAMPAIGN EXECUTION SUMMARY")
@@ -91,13 +96,13 @@ def main():
         print(f"  - Phase 2 (Property-based & Metamorphic):  {len(all_reports['phase2_cgpt_properties'])}")
         print(f"  - Phase 3 (Stateful Sequence Minimizer):   {len(all_reports['phase3_stateful_sequences'])}")
         print(f"  - Phase 4 (Concurrency Stress & Health):   {len(stress.findings)}"
-              f" ({stress.status}, {stress.workload.failed_connections}/{stress.workload.requests} connection failures)")
+              f" ({stress.status}, {stress.failed_connections}/{stress.requests} connection failures)")
         for reason in stress.reasons:
             print(f"    INCOMPLETE: {reason}")
         print("="*70)
 
         if stress.status != "completed":
-            print("Phase 4 could not measure Varnish health; see /campaign/report.json.")
+            print(f"Phase 4 could not measure Varnish health; see {REPORT_PATH}.")
             sys.exit(1)
 
     finally:

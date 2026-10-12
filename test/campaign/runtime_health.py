@@ -13,6 +13,7 @@ a numeric default.
 
 import os
 import subprocess
+import tempfile
 import time
 import urllib.request
 
@@ -51,21 +52,24 @@ class HealthSnapshot:
 class VarnishRuntime:
     """The campaign's Varnish, started by /start.sh, which execs varnishd -F."""
 
-    def __init__(self, host, port, process):
+    def __init__(self, host, port, process, output):
         self.host = host
         self.port = port
         self.process = process
+        self.output = output
 
     @classmethod
     def start(cls, host, port, varnish_env):
+        """Run /start.sh listening on host:port unless varnish_env overrides VARNISH_LISTEN."""
         env = os.environ.copy()
         # start.sh refuses VARNISH_START alongside the other VARNISH_* variables.
         env.pop("VARNISH_START", None)
+        env["VARNISH_LISTEN"] = f"{host}:{port}"
         env.update(varnish_env)
-        process = subprocess.Popen(
-            ["/start.sh"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE
-        )
-        return cls(host, port, process)
+        # A file rather than a pipe: nobody drains varnishd -F while it runs.
+        output = tempfile.TemporaryFile()
+        process = subprocess.Popen(["/start.sh"], env=env, stdout=output, stderr=subprocess.STDOUT)
+        return cls(host, port, process, output)
 
     @property
     def pid(self):
@@ -90,12 +94,10 @@ class VarnishRuntime:
             time.sleep(0.5)
         return False
 
-    def startup_failure(self):
-        """start.sh's exit code and stderr once it has exited, else None."""
-        if self.exit_status() is None:
-            return None
-        _, err = self.process.communicate()
-        return f"start.sh exited with code {self.process.returncode}: {err.decode()}"
+    def start_output(self, limit=4096):
+        """The tail of start.sh/varnishd's combined stdout and stderr."""
+        self.output.seek(0)
+        return self.output.read().decode(errors="replace")[-limit:].strip()
 
     def snapshot(self):
         diagnostics = []
@@ -105,6 +107,7 @@ class VarnishRuntime:
                 "collector": "process",
                 "error": f"start.sh exited with code {exit_status}",
                 "returncode": exit_status,
+                "stderr": self.start_output(),
             })
 
         counters = _read_counters(diagnostics)
@@ -113,7 +116,8 @@ class VarnishRuntime:
             children = _read_children(self.pid, diagnostics)
 
         if diagnostics:
-            # Partial measurements are not evidence of health.
+            # Partial counters are not evidence of health. Children stay as
+            # process diagnostics; they feed no finding unless available.
             counters = {}
         return HealthSnapshot(counters, self.pid, children, diagnostics)
 
