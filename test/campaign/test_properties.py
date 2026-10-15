@@ -11,6 +11,8 @@ import time
 import urllib.parse
 import urllib.request
 
+from phase_result import run_phase
+
 class Finding:
     def __init__(self, category, name, description, reproducer, severity="HIGH"):
         self.category = category
@@ -28,7 +30,6 @@ class Finding:
             "severity": self.severity,
         }
 
-findings = []
 
 def raw_http_request(host, port, method, path, headers=None, body=None, timeout=5):
     """Perform raw HTTP request using http.client to preserve exact headers."""
@@ -58,7 +59,7 @@ def purge_url(varnish_host, varnish_port, path):
 # -------------------------------------------------------------
 # Property 1: Static Asset Extensions, Query Strings & Casing
 # -------------------------------------------------------------
-def test_static_asset_properties(varnish_host, varnish_port, backend):
+def test_static_asset_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 1] Static Asset Caching, Cookie Stripping & Query Strings ---")
     
     extensions = [
@@ -83,23 +84,25 @@ def test_static_asset_properties(varnish_host, varnish_port, backend):
             recv_cookie = backend_history[0]["headers"].get("Cookie", None)
             if recv_cookie:
                 print(f"[BUG] Cookie was NOT stripped for standard static asset {path}")
-                findings.append(Finding(
-                    category="Cookie Stripping / Privacy",
-                    name=f"Static asset {ext} leaked Cookie to origin",
-                    description=f"Request to {path} with Cookie header forwarded the cookie to backend: {recv_cookie}",
-                    reproducer=f"curl -H 'Cookie: session=secret' http://{varnish_host}:{varnish_port}{path}",
-                    severity="HIGH"
-                ))
+                with findings.observe(first=r1, second=r2, origin_requests=backend_history) as record:
+                    record(Finding(
+                        category="Cookie Stripping / Privacy",
+                        name=f"Static asset {ext} leaked Cookie to origin",
+                        description=f"Request to {path} with Cookie header forwarded the cookie to backend: {recv_cookie}",
+                        reproducer=f"curl -H 'Cookie: session=secret' http://{varnish_host}:{varnish_port}{path}",
+                        severity="HIGH"
+                    ))
 
         if "HIT" not in r2["x_cache"]:
             print(f"[BUG] Static asset {path} was not cached on second request: X-Cache={r2['x_cache']}")
-            findings.append(Finding(
-                category="Caching Logic",
-                name=f"Static asset {ext} not cached",
-                description=f"Consecutive requests to {path} produced X-Cache='{r2['x_cache']}' instead of HIT",
-                reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} && curl -i http://{varnish_host}:{varnish_port}{path}",
-                severity="HIGH"
-            ))
+            with findings.observe(first=r1, second=r2) as record:
+                record(Finding(
+                    category="Caching Logic",
+                    name=f"Static asset {ext} not cached",
+                    description=f"Consecutive requests to {path} produced X-Cache='{r2['x_cache']}' instead of HIT",
+                    reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} && curl -i http://{varnish_host}:{varnish_port}{path}",
+                    severity="HIGH"
+                ))
 
     # Test 1.2: Metamorphic Property - Static assets WITH Query Parameters (?v=123, ?hash=...)
     print("Testing static assets with query strings (metamorphic mutation)...")
@@ -128,32 +131,34 @@ def test_static_asset_properties(varnish_host, varnish_port, backend):
 
             if cookie_leaked:
                 print(f"[CRITICAL BUG] Static asset with query string '{path}' leaked Cookie to backend!")
-                findings.append(Finding(
-                    category="Cookie Stripping / Privacy",
-                    name="Static asset with query parameter leaks Cookie and bypasses cache",
-                    description=(
-                        f"When requesting static asset with query string '{path}', "
-                        f"the regex in cache-policy.vcl ('\\.(css|js...)$') fails to match due to the '$' anchor. "
-                        f"Consequently, Cookie header is NOT stripped, and 'if (req.http.Cookie) return (pass);' "
-                        f"causes the request to PASS to origin, leaking private cookies and completely bypassing cache!"
-                    ),
-                    reproducer=f"curl -v -H 'Cookie: session=secret' http://{varnish_host}:{varnish_port}{path}",
-                    severity="HIGH"
-                ))
+                with findings.observe(first=r1, second=r2, origin_requests=backend_reqs) as record:
+                    record(Finding(
+                        category="Cookie Stripping / Privacy",
+                        name="Static asset with query parameter leaks Cookie and bypasses cache",
+                        description=(
+                            f"When requesting static asset with query string '{path}', "
+                            f"the regex in cache-policy.vcl ('\\.(css|js...)$') fails to match due to the '$' anchor. "
+                            f"Consequently, Cookie header is NOT stripped, and 'if (req.http.Cookie) return (pass);' "
+                            f"causes the request to PASS to origin, leaking private cookies and completely bypassing cache!"
+                        ),
+                        reproducer=f"curl -v -H 'Cookie: session=secret' http://{varnish_host}:{varnish_port}{path}",
+                        severity="HIGH"
+                    ))
                 break # Reported for category
 
             if "HIT" not in r2["x_cache"]:
                 print(f"[CRITICAL BUG] Static asset with query string '{path}' was NOT cached: {r2['x_cache']}")
-                findings.append(Finding(
-                    category="Caching Inefficiency",
-                    name="Static assets with query parameters are not cached when Cookie is present",
-                    description=(
-                        f"Static asset '{path}' was not served from cache on second request (got '{r2['x_cache']}'). "
-                        "Websites widely use query parameters for cache-busting (e.g. style.css?v=2); this defect causes origin overload."
-                    ),
-                    reproducer=f"curl -i -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path} && curl -i -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path}",
-                    severity="HIGH"
-                ))
+                with findings.observe(first=r1, second=r2) as record:
+                    record(Finding(
+                        category="Caching Inefficiency",
+                        name="Static assets with query parameters are not cached when Cookie is present",
+                        description=(
+                            f"Static asset '{path}' was not served from cache on second request (got '{r2['x_cache']}'). "
+                            "Websites widely use query parameters for cache-busting (e.g. style.css?v=2); this defect causes origin overload."
+                        ),
+                        reproducer=f"curl -i -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path} && curl -i -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path}",
+                        severity="HIGH"
+                    ))
                 break
 
     # Test 1.3: Case Sensitivity (.CSS, .PNG, .Js)
@@ -170,23 +175,24 @@ def test_static_asset_properties(varnish_host, varnish_port, backend):
         backend_reqs = [h for h in backend.get_history() if h["path"] == path]
         if backend_reqs and backend_reqs[0]["headers"].get("Cookie"):
             print(f"[BUG] Uppercase static extension '{path}' is not recognized: Cookie was not stripped")
-            findings.append(Finding(
-                category="Regex Case Sensitivity",
-                name="Static asset regex is case-sensitive (ignores uppercase extensions)",
-                description=(
-                    f"Request for '{path}' did not match static asset regex because VCL regex '~' is case-sensitive. "
-                    "Cookie was not stripped and request bypassed cache."
-                ),
-                reproducer=f"curl -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path}",
-                severity="MEDIUM"
-            ))
+            with findings.observe(first=r1, origin_requests=backend_reqs) as record:
+                record(Finding(
+                    category="Regex Case Sensitivity",
+                    name="Static asset regex is case-sensitive (ignores uppercase extensions)",
+                    description=(
+                        f"Request for '{path}' did not match static asset regex because VCL regex '~' is case-sensitive. "
+                        "Cookie was not stripped and request bypassed cache."
+                    ),
+                    reproducer=f"curl -H 'Cookie: test=1' http://{varnish_host}:{varnish_port}{path}",
+                    severity="MEDIUM"
+                ))
             break
 
 
 # -------------------------------------------------------------
 # Property 2: Origin Set-Cookie & Cache-Control Security Invariant
 # -------------------------------------------------------------
-def test_origin_security_properties(varnish_host, varnish_port, backend):
+def test_origin_security_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 2] Origin Set-Cookie & Cache-Control Poisoning / Isolation ---")
 
     # Test 2.1: CRITICAL SECURITY TEST: Unauthenticated user gets Set-Cookie from origin
@@ -216,22 +222,23 @@ def test_origin_security_properties(varnish_host, varnish_port, backend):
 
     if "HIT" in r2["x_cache"] and r2["set_cookie"] == "session_id=ALICE_SECRET_SESSION_TOKEN; Path=/; HttpOnly":
         print("[CRITICAL SECURITY VULNERABILITY] Varnish cached Set-Cookie and served Alice's session to Bob!")
-        findings.append(Finding(
-            category="Security / Session Leakage",
-            name="Cache Poisoning: Origin Set-Cookie cached and leaked to other users",
-            description=(
-                "When an unauthenticated client sends GET to an endpoint where the origin returns 'Set-Cookie', "
-                "cache-policy.vcl's vcl_backend_response executes 'return (deliver);', bypassing Varnish's built-in "
-                "protection (vcl_beresp_cookie / beresp.uncacheable). As a result, the response AND the Set-Cookie header "
-                "are stored in cache. Subsequent visitors receive X-Cache: HIT and are handed another user's session cookie!"
-            ),
-            reproducer=(
-                f"1. Configure backend to return Set-Cookie: session=secret\n"
-                f"2. curl -i http://{varnish_host}:{varnish_port}{path} (Alice)\n"
-                f"3. curl -i http://{varnish_host}:{varnish_port}{path} (Bob sees Alice's Set-Cookie and X-Cache: HIT!)"
-            ),
-            severity="CRITICAL"
-        ))
+        with findings.observe(first=r1, second=r2) as record:
+            record(Finding(
+                category="Security / Session Leakage",
+                name="Cache Poisoning: Origin Set-Cookie cached and leaked to other users",
+                description=(
+                    "When an unauthenticated client sends GET to an endpoint where the origin returns 'Set-Cookie', "
+                    "cache-policy.vcl's vcl_backend_response executes 'return (deliver);', bypassing Varnish's built-in "
+                    "protection (vcl_beresp_cookie / beresp.uncacheable). As a result, the response AND the Set-Cookie header "
+                    "are stored in cache. Subsequent visitors receive X-Cache: HIT and are handed another user's session cookie!"
+                ),
+                reproducer=(
+                    f"1. Configure backend to return Set-Cookie: session=secret\n"
+                    f"2. curl -i http://{varnish_host}:{varnish_port}{path} (Alice)\n"
+                    f"3. curl -i http://{varnish_host}:{varnish_port}{path} (Bob sees Alice's Set-Cookie and X-Cache: HIT!)"
+                ),
+                severity="CRITICAL"
+            ))
 
     # Test 2.2: Cache-Control: private & no-store honoring
     print("Testing Cache-Control: private & no-store honoring...")
@@ -254,31 +261,32 @@ def test_origin_security_properties(varnish_host, varnish_port, backend):
 
         if "HIT" in r2["x_cache"]:
             print(f"[CRITICAL RFC VIOLATION] Varnish cached response with 'Cache-Control: {cc_directive}'!")
-            findings.append(Finding(
-                category="RFC 9111 Compliance / Privacy",
-                name=f"Varnish caches response despite Cache-Control: {cc_directive}",
-                description=(
-                    f"Origin returned 'Cache-Control: {cc_directive}', but Varnish cached the response (X-Cache: HIT). "
-                    "This occurs because vcl_backend_response explicitly returns 'deliver' before Varnish built-in "
-                    "checks (vcl_beresp_control) can inspect Cache-Control and mark the object uncacheable."
-                ),
-                reproducer=(
-                    f"curl -i http://{varnish_host}:{varnish_port}{path} (returns Cache-Control: {cc_directive})\n"
-                    f"curl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT!)"
-                ),
-                severity="CRITICAL"
-            ))
+            with findings.observe(first=r1, second=r2) as record:
+                record(Finding(
+                    category="RFC 9111 Compliance / Privacy",
+                    name=f"Varnish caches response despite Cache-Control: {cc_directive}",
+                    description=(
+                        f"Origin returned 'Cache-Control: {cc_directive}', but Varnish cached the response (X-Cache: HIT). "
+                        "This occurs because vcl_backend_response explicitly returns 'deliver' before Varnish built-in "
+                        "checks (vcl_beresp_control) can inspect Cache-Control and mark the object uncacheable."
+                    ),
+                    reproducer=(
+                        f"curl -i http://{varnish_host}:{varnish_port}{path} (returns Cache-Control: {cc_directive})\n"
+                        f"curl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT!)"
+                    ),
+                    severity="CRITICAL"
+                ))
 
     # Test 2.3: Surrogate-Control must not disable Cache-Control handling
     # unless it actually grants surrogate freshness (max-age). An ESI
     # capability advertisement (content="ESI/1.0") is NOT a storage grant.
     print("Testing Surrogate-Control does not disable Cache-Control private/no-store...")
     surrogate_variants = [
-        ('content="ESI/1.0"', "esi-advertisement"),
-        ("max-age=0", "zero-maxage"),
-        ("OFF", "off"),
+        ('content="ESI/1.0"', "esi-advertisement", "an ESI capability advertisement, not a storage grant"),
+        ("max-age=0", "zero-maxage", "zero surrogate freshness"),
+        ("OFF", "off", "surrogate control switched off"),
     ]
-    for sc_value, sc_slug in surrogate_variants:
+    for sc_value, sc_slug, sc_meaning in surrogate_variants:
         for cc_directive in ["private", "no-store", "no-cache"]:
             path = f"/private-sc-{cc_directive}-{sc_slug}"
             purge_url(varnish_host, varnish_port, path)
@@ -300,32 +308,33 @@ def test_origin_security_properties(varnish_host, varnish_port, backend):
             if "HIT" in r2["x_cache"]:
                 print(f"[CRITICAL SECURITY VULNERABILITY] Varnish cached response with "
                       f"'Cache-Control: {cc_directive}' because of Surrogate-Control: {sc_value}!")
-                findings.append(Finding(
-                    category="RFC 9111 Compliance / Privacy",
-                    name=(f"Varnish caches response with Cache-Control: {cc_directive} "
-                          f"when origin also sends Surrogate-Control: {sc_value}"),
-                    description=(
-                        f"Origin returned 'Cache-Control: {cc_directive}' plus 'Surrogate-Control: {sc_value}' "
-                        f"({sc_meaning}). A Surrogate-Control value that does not itself grant surrogate "
-                        "freshness (max-age) must not disable the Cache-Control directives. "
-                        "vcl_backend_response only honours no-cache/no-store/private when Surrogate-Control "
-                        "is absent, so any other Surrogate-Control value (including a bare ESI advertisement) "
-                        "lets Varnish store and replay private responses to other clients."
-                    ),
-                    reproducer=(
-                        f"Origin must return Cache-Control: {cc_directive}, max-age=3600 plus "
-                        f"Surrogate-Control: {sc_value}\n"
-                        f"curl -i http://{varnish_host}:{varnish_port}{path} (X-Cache: MISS)\n"
-                        f"curl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT!)"
-                    ),
-                    severity="CRITICAL"
-                ))
+                with findings.observe(first=r1, second=r2) as record:
+                    record(Finding(
+                        category="RFC 9111 Compliance / Privacy",
+                        name=(f"Varnish caches response with Cache-Control: {cc_directive} "
+                              f"when origin also sends Surrogate-Control: {sc_value}"),
+                        description=(
+                            f"Origin returned 'Cache-Control: {cc_directive}' plus 'Surrogate-Control: {sc_value}' "
+                            f"({sc_meaning}). A Surrogate-Control value that does not itself grant surrogate "
+                            "freshness (max-age) must not disable the Cache-Control directives. "
+                            "vcl_backend_response only honours no-cache/no-store/private when Surrogate-Control "
+                            "is absent, so any other Surrogate-Control value (including a bare ESI advertisement) "
+                            "lets Varnish store and replay private responses to other clients."
+                        ),
+                        reproducer=(
+                            f"Origin must return Cache-Control: {cc_directive}, max-age=3600 plus "
+                            f"Surrogate-Control: {sc_value}\n"
+                            f"curl -i http://{varnish_host}:{varnish_port}{path} (X-Cache: MISS)\n"
+                            f"curl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT!)"
+                        ),
+                        severity="CRITICAL"
+                    ))
 
 
 # -------------------------------------------------------------
 # Property 3: Accept-Encoding Metamorphic Properties
 # -------------------------------------------------------------
-def test_accept_encoding_properties(varnish_host, varnish_port, backend):
+def test_accept_encoding_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 3] Accept-Encoding Normalization & RFC Compliance ---")
 
     # Test 3.1: Client explicitly forbids gzip via gzip;q=0
@@ -339,17 +348,18 @@ def test_accept_encoding_properties(varnish_host, varnish_port, backend):
 
     if backend_ae == "gzip":
         print(f"[BUG] Client sent 'gzip;q=0' (refusing gzip), but Varnish rewritten to '{backend_ae}'!")
-        findings.append(Finding(
-            category="HTTP RFC Compliance",
-            name="Accept-Encoding: gzip;q=0 incorrectly normalized to gzip",
-            description=(
-                "RFC 9110 specifies that 'q=0' means the encoding is not acceptable to the client. "
-                "In cache-policy.vcl, 'elsif (req.http.Accept-Encoding ~ \"gzip\")' matches 'gzip;q=0' "
-                "and rewrites it to 'gzip'. If the origin compresses the response with gzip, the client cannot decode it."
-            ),
-            reproducer=f"curl -H 'Accept-Encoding: gzip;q=0, deflate' http://{varnish_host}:{varnish_port}{path}",
-            severity="HIGH"
-        ))
+        with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
+            record(Finding(
+                category="HTTP RFC Compliance",
+                name="Accept-Encoding: gzip;q=0 incorrectly normalized to gzip",
+                description=(
+                    "RFC 9110 specifies that 'q=0' means the encoding is not acceptable to the client. "
+                    "In cache-policy.vcl, 'elsif (req.http.Accept-Encoding ~ \"gzip\")' matches 'gzip;q=0' "
+                    "and rewrites it to 'gzip'. If the origin compresses the response with gzip, the client cannot decode it."
+                ),
+                reproducer=f"curl -H 'Accept-Encoding: gzip;q=0, deflate' http://{varnish_host}:{varnish_port}{path}",
+                severity="HIGH"
+            ))
 
     # Test 3.2: Static asset with query string: does Accept-Encoding get stripped?
     path = "/echo-headers/asset.css?v=2"
@@ -361,16 +371,17 @@ def test_accept_encoding_properties(varnish_host, varnish_port, backend):
     backend_ae = data.get("accept_encoding_received")
     if backend_ae is not None:
         print(f"[BUG] Static asset with query string '{path}' did NOT have Accept-Encoding stripped: received '{backend_ae}'")
-        findings.append(Finding(
-            category="Cache Efficiency",
-            name="Static asset with query parameter retains Accept-Encoding header",
-            description=(
-                f"For static assets, cache-policy.vcl is intended to unset Accept-Encoding so the cache is not fragmented. "
-                f"However, with query string '{path}', Accept-Encoding was forwarded as '{backend_ae}'."
-            ),
-            reproducer=f"curl -H 'Accept-Encoding: gzip' http://{varnish_host}:{varnish_port}{path}",
-            severity="MEDIUM"
-        ))
+        with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
+            record(Finding(
+                category="Cache Efficiency",
+                name="Static asset with query parameter retains Accept-Encoding header",
+                description=(
+                    f"For static assets, cache-policy.vcl is intended to unset Accept-Encoding so the cache is not fragmented. "
+                    f"However, with query string '{path}', Accept-Encoding was forwarded as '{backend_ae}'."
+                ),
+                reproducer=f"curl -H 'Accept-Encoding: gzip' http://{varnish_host}:{varnish_port}{path}",
+                severity="MEDIUM"
+            ))
 
     # Test 3.3: Uppercase / mixed-case content-codings normalized (RFC 9110 §8.4.1)
     for sample_ae, expected_ae in [("Gzip", "gzip"), ("GZIP", "gzip"), ("Deflate", "deflate"), ("DEFLATE", "deflate")]:
@@ -383,16 +394,17 @@ def test_accept_encoding_properties(varnish_host, varnish_port, backend):
         backend_ae = data.get("accept_encoding_received")
         if backend_ae != expected_ae:
             print(f"[BUG] Client sent '{sample_ae}' but Varnish forwarded '{backend_ae}' instead of '{expected_ae}'!")
-            findings.append(Finding(
-                category="HTTP RFC Compliance",
-                name=f"Accept-Encoding: {sample_ae} not normalized to {expected_ae}",
-                description=(
-                    f"RFC 9110 §8.4.1 specifies all content-coding values are case-insensitive. "
-                    f"Varnish received '{sample_ae}' and forwarded '{backend_ae}' instead of '{expected_ae}'."
-                ),
-                reproducer=f"curl -H 'Accept-Encoding: {sample_ae}' http://{varnish_host}:{varnish_port}{path}",
-                severity="HIGH"
-            ))
+            with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
+                record(Finding(
+                    category="HTTP RFC Compliance",
+                    name=f"Accept-Encoding: {sample_ae} not normalized to {expected_ae}",
+                    description=(
+                        f"RFC 9110 §8.4.1 specifies all content-coding values are case-insensitive. "
+                        f"Varnish received '{sample_ae}' and forwarded '{backend_ae}' instead of '{expected_ae}'."
+                    ),
+                    reproducer=f"curl -H 'Accept-Encoding: {sample_ae}' http://{varnish_host}:{varnish_port}{path}",
+                    severity="HIGH"
+                ))
 
     # Test 3.4: Uppercase Q parameter refusal respected (RFC 9110 §5.6.6)
     path = "/echo-headers/test-ae-upper-q0"
@@ -404,22 +416,23 @@ def test_accept_encoding_properties(varnish_host, varnish_port, backend):
     backend_ae = data.get("accept_encoding_received")
     if backend_ae != "deflate":
         print(f"[BUG] Client sent 'gzip; Q=0, deflate' but Varnish forwarded '{backend_ae}' instead of 'deflate'!")
-        findings.append(Finding(
-            category="HTTP RFC Compliance",
-            name="Accept-Encoding: uppercase Q=0 ignored, forcing unwanted encoding",
-            description=(
-                "RFC 9110 §5.6.6 specifies parameter names are case-insensitive. "
-                f"Client refused gzip via 'Q=0' but Varnish forwarded '{backend_ae}' instead of 'deflate'."
-            ),
-            reproducer=f"curl -H 'Accept-Encoding: gzip; Q=0, deflate' http://{varnish_host}:{varnish_port}{path}",
-            severity="HIGH"
-        ))
+        with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
+            record(Finding(
+                category="HTTP RFC Compliance",
+                name="Accept-Encoding: uppercase Q=0 ignored, forcing unwanted encoding",
+                description=(
+                    "RFC 9110 §5.6.6 specifies parameter names are case-insensitive. "
+                    f"Client refused gzip via 'Q=0' but Varnish forwarded '{backend_ae}' instead of 'deflate'."
+                ),
+                reproducer=f"curl -H 'Accept-Encoding: gzip; Q=0, deflate' http://{varnish_host}:{varnish_port}{path}",
+                severity="HIGH"
+            ))
 
 
 # -------------------------------------------------------------
 # Property 4: HTTP Methods & Verbs
 # -------------------------------------------------------------
-def test_http_methods_properties(varnish_host, varnish_port, backend):
+def test_http_methods_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 4] HTTP Methods Caching & Cache Invalidation ---")
 
     # Prime a URL with GET
@@ -436,13 +449,14 @@ def test_http_methods_properties(varnish_host, varnish_port, backend):
         r_mut = raw_http_request(varnish_host, varnish_port, method, path, body=f"data for {method}")
         if "HIT" in r_mut["x_cache"]:
             print(f"[CRITICAL BUG] {method} request was served from cache: {r_mut['x_cache']}")
-            findings.append(Finding(
-                category="HTTP Method Safety",
-                name=f"{method} served from cache",
-                description=f"HTTP method {method} was served from cache with X-Cache: HIT instead of passing to origin",
-                reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{path}",
-                severity="CRITICAL"
-            ))
+            with findings.observe(response=r_mut) as record:
+                record(Finding(
+                    category="HTTP Method Safety",
+                    name=f"{method} served from cache",
+                    description=f"HTTP method {method} was served from cache with X-Cache: HIT instead of passing to origin",
+                    reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{path}",
+                    severity="CRITICAL"
+                ))
         else:
             print(f"[+] {method} correctly bypassed cache (X-Cache: {r_mut['x_cache']})")
 
@@ -460,36 +474,39 @@ def test_http_methods_properties(varnish_host, varnish_port, backend):
             cookie_val = f"session={method.lower()}_user_token"
             r_mut = raw_http_request(varnish_host, varnish_port, method, spath, headers={"Cookie": cookie_val}, body=f"body for {method}")
             if "HIT" in r_mut["x_cache"]:
-                findings.append(Finding(
-                    category="HTTP Method Safety",
-                    name=f"{method} to static URL served from cache",
-                    description=f"{method} request to static asset {spath} was served from cache instead of passing to origin",
-                    reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
-                    severity="CRITICAL"
-                ))
+                with findings.observe(response=r_mut) as record:
+                    record(Finding(
+                        category="HTTP Method Safety",
+                        name=f"{method} to static URL served from cache",
+                        description=f"{method} request to static asset {spath} was served from cache instead of passing to origin",
+                        reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
+                        severity="CRITICAL"
+                    ))
             backend_reqs = [h for h in backend.get_history() if h["path"] == spath and h["method"] == method]
             if not backend_reqs:
-                findings.append(Finding(
-                    category="HTTP Method Safety",
-                    name=f"{method} to static URL did not reach origin",
-                    description=f"{method} request to {spath} was not recorded at backend",
-                    reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{spath}",
-                    severity="HIGH"
-                ))
+                with findings.observe(response=r_mut, origin_requests=backend_reqs) as record:
+                    record(Finding(
+                        category="HTTP Method Safety",
+                        name=f"{method} to static URL did not reach origin",
+                        description=f"{method} request to {spath} was not recorded at backend",
+                        reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{spath}",
+                        severity="HIGH"
+                    ))
             elif backend_reqs[-1]["headers"].get("Cookie") != cookie_val:
                 actual_cookie = backend_reqs[-1]["headers"].get("Cookie")
                 print(f"[CRITICAL BUG] {method} to static URL '{spath}' stripped Cookie! (got {actual_cookie})")
-                findings.append(Finding(
-                    category="Cookie Stripping / Mutating Methods",
-                    name=f"Mutating {method} to static asset extension stripped Cookie header",
-                    description=(
-                        f"When sending {method} request to static asset '{spath}' with Cookie header, "
-                        f"the cookie was stripped before reaching the origin backend (received: {actual_cookie}). "
-                        "Mutating requests to static extensions must preserve Cookie headers for authenticated operations."
-                    ),
-                    reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
-                    severity="CRITICAL"
-                ))
+                with findings.observe(response=r_mut, origin_requests=backend_reqs) as record:
+                    record(Finding(
+                        category="Cookie Stripping / Mutating Methods",
+                        name=f"Mutating {method} to static asset extension stripped Cookie header",
+                        description=(
+                            f"When sending {method} request to static asset '{spath}' with Cookie header, "
+                            f"the cookie was stripped before reaching the origin backend (received: {actual_cookie}). "
+                            "Mutating requests to static extensions must preserve Cookie headers for authenticated operations."
+                        ),
+                        reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
+                        severity="CRITICAL"
+                    ))
             else:
                 print(f"[+] {method} to static URL '{spath}' preserved Cookie intact at origin")
 
@@ -497,7 +514,7 @@ def test_http_methods_properties(varnish_host, varnish_port, backend):
 # -------------------------------------------------------------
 # Property 5: PURGE ACL & IP Spoofing
 # -------------------------------------------------------------
-def test_purge_acl_properties(varnish_host, varnish_port, backend):
+def test_purge_acl_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 5] PURGE ACL Security & IP Spoofing Invariance ---")
 
     path = "/purge-target-test"
@@ -529,7 +546,7 @@ def test_purge_acl_properties(varnish_host, varnish_port, backend):
 # -------------------------------------------------------------
 # Property 6: 5xx Error Resilience & Grace Behavior
 # -------------------------------------------------------------
-def test_5xx_and_grace_properties(varnish_host, varnish_port, backend):
+def test_5xx_and_grace_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 6] 5xx Backend Response & Grace Interaction ---")
 
     path = "/test-500-error-flow"
@@ -546,19 +563,20 @@ def test_5xx_and_grace_properties(varnish_host, varnish_port, backend):
 
     if r1["backend_req_id"] == r2["backend_req_id"] and "HIT" in r2["x_cache"]:
         print("[CRITICAL BUG] 500 error was cached and served as HIT!")
-        findings.append(Finding(
-            category="Error Caching",
-            name="500 Internal Server Error cached and served from cache",
-            description="Origin 500 error was cached and served to subsequent request as X-Cache: HIT",
-            reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} && curl -i http://{varnish_host}:{varnish_port}{path}",
-            severity="CRITICAL"
-        ))
+        with findings.observe(first=r1, second=r2) as record:
+            record(Finding(
+                category="Error Caching",
+                name="500 Internal Server Error cached and served from cache",
+                description="Origin 500 error was cached and served to subsequent request as X-Cache: HIT",
+                reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} && curl -i http://{varnish_host}:{varnish_port}{path}",
+                severity="CRITICAL"
+            ))
 
 
 # -------------------------------------------------------------
 # Property 7: Host Header Compliance & Casing Invariant (RFC 9112 / RFC 9110)
 # -------------------------------------------------------------
-def test_host_header_properties(varnish_host, varnish_port, backend):
+def test_host_header_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 7] Host Header Compliance & Casing Invariant ---")
     import socket
 
@@ -582,76 +600,82 @@ def test_host_header_properties(varnish_host, varnish_port, backend):
     # HTTP/1.1 without Host header
     code, _ = send_raw(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
     if code != 400:
-        findings.append(Finding(
-            category="HTTP Compliance",
-            name="HTTP/1.1 request without Host header accepted",
-            description=f"HTTP/1.1 request lacking Host header returned {code} instead of 400 Bad Request",
-            reproducer=f"printf 'GET / HTTP/1.1\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
-            severity="HIGH"
-        ))
+        with findings.observe(status=code) as record:
+            record(Finding(
+                category="HTTP Compliance",
+                name="HTTP/1.1 request without Host header accepted",
+                description=f"HTTP/1.1 request lacking Host header returned {code} instead of 400 Bad Request",
+                reproducer=f"printf 'GET / HTTP/1.1\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+                severity="HIGH"
+            ))
 
     # HTTP/1.1 with empty Host header
     code_empty, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n")
     if code_empty != 400:
-        findings.append(Finding(
-            category="HTTP Compliance",
-            name="HTTP/1.1 request with empty Host header accepted",
-            description=f"HTTP/1.1 request with empty Host header returned {code_empty} instead of 400 Bad Request",
-            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
-            severity="HIGH"
-        ))
+        with findings.observe(status=code_empty) as record:
+            record(Finding(
+                category="HTTP Compliance",
+                name="HTTP/1.1 request with empty Host header accepted",
+                description=f"HTTP/1.1 request with empty Host header returned {code_empty} instead of 400 Bad Request",
+                reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+                severity="HIGH"
+            ))
 
     # HTTP/1.1 with whitespace-only Host header
     code_ws, _ = send_raw(b"GET / HTTP/1.1\r\nHost:   \r\nConnection: close\r\n\r\n")
     if code_ws != 400:
-        findings.append(Finding(
-            category="HTTP Compliance",
-            name="HTTP/1.1 request with whitespace-only Host header accepted",
-            description=f"HTTP/1.1 request with whitespace-only Host header returned {code_ws} instead of 400 Bad Request",
-            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost:   \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
-            severity="HIGH"
-        ))
+        with findings.observe(status=code_ws) as record:
+            record(Finding(
+                category="HTTP Compliance",
+                name="HTTP/1.1 request with whitespace-only Host header accepted",
+                description=f"HTTP/1.1 request with whitespace-only Host header returned {code_ws} instead of 400 Bad Request",
+                reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost:   \\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+                severity="HIGH"
+            ))
 
     # HTTP/1.1 with tab whitespace Host header
     code_tab, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \t\r\nConnection: close\r\n\r\n")
     if code_tab != 400:
-        findings.append(Finding(
-            category="HTTP Compliance",
-            name="HTTP/1.1 request with tab whitespace Host header accepted",
-            description=f"HTTP/1.1 request with tab whitespace Host header returned {code_tab} instead of 400 Bad Request",
-            reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\t\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
-            severity="HIGH"
-        ))
+        with findings.observe(status=code_tab) as record:
+            record(Finding(
+                category="HTTP Compliance",
+                name="HTTP/1.1 request with tab whitespace Host header accepted",
+                description=f"HTTP/1.1 request with tab whitespace Host header returned {code_tab} instead of 400 Bad Request",
+                reproducer=f"printf 'GET / HTTP/1.1\\r\\nHost: \\t\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+                severity="HIGH"
+            ))
 
     # HTTP/1.0 without Host header should be accepted (200)
     code_10, _ = send_raw(b"GET / HTTP/1.0\r\nConnection: close\r\n\r\n")
     if code_10 != 200:
-        findings.append(Finding(
-            category="HTTP Compliance",
-            name="HTTP/1.0 request without Host header rejected",
-            description=f"HTTP/1.0 request lacking Host header returned {code_10} instead of 200 OK",
-            reproducer=f"printf 'GET / HTTP/1.0\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
-            severity="MEDIUM"
-        ))
+        with findings.observe(status=code_10) as record:
+            record(Finding(
+                category="HTTP Compliance",
+                name="HTTP/1.0 request without Host header rejected",
+                description=f"HTTP/1.0 request lacking Host header returned {code_10} instead of 200 OK",
+                reproducer=f"printf 'GET / HTTP/1.0\\r\\nConnection: close\\r\\n\\r\\n' | nc {varnish_host} {varnish_port}",
+                severity="MEDIUM"
+            ))
 
     # Host casing invariance
     test_path = f"/?host_prop_test={random.randint(10000, 99999)}"
     send_raw(f"GET {test_path} HTTP/1.1\r\nHost: EXAMPLE.COM\r\nConnection: close\r\n\r\n".encode())
     _, r_lower = send_raw(f"GET {test_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode())
     if b"X-Cache: HIT" not in r_lower:
-        findings.append(Finding(
-            category="Cache Key Normalization",
-            name="Host header casing fragments cache",
-            description="Requests differing only in Host header casing did not share cache entry",
-            reproducer=f"curl -H 'Host: EXAMPLE.COM' ... && curl -H 'Host: example.com' ...",
-            severity="MEDIUM"
-        ))
+        with findings.observe(response=r_lower.decode("iso-8859-1", errors="replace")) as record:
+            record(Finding(
+                category="Cache Key Normalization",
+                name="Host header casing fragments cache",
+                description="Requests differing only in Host header casing did not share cache entry",
+                reproducer=f"curl -H 'Host: EXAMPLE.COM' ... && curl -H 'Host: example.com' ...",
+                severity="MEDIUM"
+            ))
 
 
 # -------------------------------------------------------------
 # Property 8: Vary: * Handling & RFC 9111 §4.1 Compliance
 # -------------------------------------------------------------
-def test_vary_star_properties(varnish_host, varnish_port, backend):
+def test_vary_star_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 8] Vary: * Header Handling & RFC 9111 Compliance ---")
 
     # Test 8.1: Origin response with Vary: * must never be cached
@@ -673,16 +697,17 @@ def test_vary_star_properties(varnish_host, varnish_port, backend):
 
     if "HIT" in r2["x_cache"]:
         print("[CRITICAL RFC VIOLATION] Varnish cached response with Vary: *!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance",
-            name="Vary: * response cached and served from cache",
-            description=(
-                "When origin serves Vary: *, RFC 9111 §4.1 prohibits caching. "
-                "Varnish served X-Cache: HIT to subsequent request."
-            ),
-            reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} (returns Vary: *)\ncurl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT)",
-            severity="HIGH"
-        ))
+        with findings.observe(first=r1, second=r2) as record:
+            record(Finding(
+                category="RFC 9111 Compliance",
+                name="Vary: * response cached and served from cache",
+                description=(
+                    "When origin serves Vary: *, RFC 9111 §4.1 prohibits caching. "
+                    "Varnish served X-Cache: HIT to subsequent request."
+                ),
+                reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path} (returns Vary: *)\ncurl -i http://{varnish_host}:{varnish_port}{path} (returns X-Cache: HIT)",
+                severity="HIGH"
+            ))
 
     # Test 8.2: Origin response with multi-value Vary containing * must never be cached
     path_multi = "/api/vary-multi-test"
@@ -703,15 +728,16 @@ def test_vary_star_properties(varnish_host, varnish_port, backend):
 
     if "HIT" in r2["x_cache"]:
         print("[CRITICAL RFC VIOLATION] Varnish cached response with multi-value Vary containing *!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance",
-            name="Multi-value Vary containing * was cached",
-            description=(
-                "When origin serves Vary: Accept-Encoding, *, Varnish cached the response and served X-Cache: HIT."
-            ),
-            reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path_multi}",
-            severity="HIGH"
-        ))
+        with findings.observe(first=r1, second=r2) as record:
+            record(Finding(
+                category="RFC 9111 Compliance",
+                name="Multi-value Vary containing * was cached",
+                description=(
+                    "When origin serves Vary: Accept-Encoding, *, Varnish cached the response and served X-Cache: HIT."
+                ),
+                reproducer=f"curl -i http://{varnish_host}:{varnish_port}{path_multi}",
+                severity="HIGH"
+            ))
 
     # Test 8.3: Specific Vary: Accept-Encoding without * should continue caching
     path_normal = f"/api/vary-normal-{random.randint(10000, 99999)}"
@@ -733,19 +759,20 @@ def test_vary_star_properties(varnish_host, varnish_port, backend):
 
     if "HIT" not in r2["x_cache"]:
         print("[REGRESSION] Normal Vary: Accept-Encoding failed to cache!")
-        findings.append(Finding(
-            category="Cache Functionality",
-            name="Normal Vary: Accept-Encoding not cached",
-            description="Response with standard Vary: Accept-Encoding was not served as HIT on identical subsequent request",
-            reproducer=f"curl -H 'Accept-Encoding: gzip' http://{varnish_host}:{varnish_port}{path_normal}",
-            severity="MEDIUM"
-        ))
+        with findings.observe(first=r1, second=r2) as record:
+            record(Finding(
+                category="Cache Functionality",
+                name="Normal Vary: Accept-Encoding not cached",
+                description="Response with standard Vary: Accept-Encoding was not served as HIT on identical subsequent request",
+                reproducer=f"curl -H 'Accept-Encoding: gzip' http://{varnish_host}:{varnish_port}{path_normal}",
+                severity="MEDIUM"
+            ))
 
 
 # -------------------------------------------------------------
 # Property 9: Authorization Header RFC 9111 §3.5 Compliance
 # -------------------------------------------------------------
-def test_authorization_properties(varnish_host, varnish_port, backend):
+def test_authorization_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 9] RFC 9111 §3.5 Authorization Header Caching ---")
 
     # Test 9.1: Request with Authorization header must never be cached or leaked across users
@@ -764,41 +791,44 @@ def test_authorization_properties(varnish_host, varnish_port, backend):
 
     if "HIT" in r_alice["x_cache"]:
         print("[CRITICAL RFC VIOLATION] First authenticated request served as HIT!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance / Security",
-            name="Authenticated request served as HIT",
-            description="Request with Authorization header was served as X-Cache: HIT",
-            reproducer=f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}",
-            severity="CRITICAL"
-        ))
+        with findings.observe(alice=r_alice) as record:
+            record(Finding(
+                category="RFC 9111 Compliance / Security",
+                name="Authenticated request served as HIT",
+                description="Request with Authorization header was served as X-Cache: HIT",
+                reproducer=f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}",
+                severity="CRITICAL"
+            ))
 
     if "HIT" in r_bob["x_cache"]:
         print("[CRITICAL SECURITY VULNERABILITY] Authenticated response leaked to another user via cache HIT!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance / Security",
-            name="Authenticated response leaked across users",
-            description=(
-                "When a user accesses an endpoint with an Authorization header, "
-                "subsequent requests by another user with different credentials received X-Cache: HIT."
-            ),
-            reproducer=(
-                f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}\n"
-                f"curl -H 'Authorization: Bearer bob-token' http://{varnish_host}:{varnish_port}{path_auth}"
-            ),
-            severity="CRITICAL"
-        ))
+        with findings.observe(alice=r_alice, bob=r_bob) as record:
+            record(Finding(
+                category="RFC 9111 Compliance / Security",
+                name="Authenticated response leaked across users",
+                description=(
+                    "When a user accesses an endpoint with an Authorization header, "
+                    "subsequent requests by another user with different credentials received X-Cache: HIT."
+                ),
+                reproducer=(
+                    f"curl -H 'Authorization: Bearer alice-token' http://{varnish_host}:{varnish_port}{path_auth}\n"
+                    f"curl -H 'Authorization: Bearer bob-token' http://{varnish_host}:{varnish_port}{path_auth}"
+                ),
+                severity="CRITICAL"
+            ))
 
     # Test 9.2: Authenticated response must not leak to anonymous user
     r_anon = raw_http_request(varnish_host, varnish_port, "GET", path_auth)
     if "HIT" in r_anon["x_cache"]:
         print("[CRITICAL SECURITY VULNERABILITY] Authenticated response leaked to anonymous user!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance / Security",
-            name="Authenticated response leaked to anonymous user",
-            description="Anonymous request without Authorization received cached authenticated response (X-Cache: HIT)",
-            reproducer=f"curl http://{varnish_host}:{varnish_port}{path_auth}",
-            severity="CRITICAL"
-        ))
+        with findings.observe(anonymous=r_anon) as record:
+            record(Finding(
+                category="RFC 9111 Compliance / Security",
+                name="Authenticated response leaked to anonymous user",
+                description="Anonymous request without Authorization received cached authenticated response (X-Cache: HIT)",
+                reproducer=f"curl http://{varnish_host}:{varnish_port}{path_auth}",
+                severity="CRITICAL"
+            ))
 
     # Test 9.3: Anonymous request caches, but authenticated request bypasses cached response
     path_cacheable = f"/api/public-content-{random.randint(10000, 99999)}"
@@ -816,30 +846,32 @@ def test_authorization_properties(varnish_host, varnish_port, backend):
 
     if "HIT" not in r_anon2["x_cache"]:
         print("[REGRESSION] Unauthenticated request to public content failed to cache!")
-        findings.append(Finding(
-            category="Cache Functionality",
-            name="Unauthenticated public content not cached",
-            description="Second request without Authorization failed to receive X-Cache: HIT",
-            reproducer=f"curl http://{varnish_host}:{varnish_port}{path_cacheable}",
-            severity="HIGH"
-        ))
+        with findings.observe(first=r_anon1, second=r_anon2) as record:
+            record(Finding(
+                category="Cache Functionality",
+                name="Unauthenticated public content not cached",
+                description="Second request without Authorization failed to receive X-Cache: HIT",
+                reproducer=f"curl http://{varnish_host}:{varnish_port}{path_cacheable}",
+                severity="HIGH"
+            ))
 
     r_auth_bypass = raw_http_request(varnish_host, varnish_port, "GET", path_cacheable, headers={"Authorization": "Bearer token123"})
     if "HIT" in r_auth_bypass["x_cache"]:
         print("[CRITICAL RFC VIOLATION] Authenticated request served cached anonymous response!")
-        findings.append(Finding(
-            category="RFC 9111 Compliance / Security",
-            name="Authenticated request received cached anonymous response",
-            description="Request with Authorization header received X-Cache: HIT instead of bypassing cache to origin",
-            reproducer=f"curl -H 'Authorization: Bearer token123' http://{varnish_host}:{varnish_port}{path_cacheable}",
-            severity="CRITICAL"
-        ))
+        with findings.observe(response=r_auth_bypass) as record:
+            record(Finding(
+                category="RFC 9111 Compliance / Security",
+                name="Authenticated request received cached anonymous response",
+                description="Request with Authorization header received X-Cache: HIT instead of bypassing cache to origin",
+                reproducer=f"curl -H 'Authorization: Bearer token123' http://{varnish_host}:{varnish_port}{path_cacheable}",
+                severity="CRITICAL"
+            ))
 
 
 # -------------------------------------------------------------
 # Property 10: Zero-Freshness Static Assets (RFC 9111 §5.2/§5.3)
 # -------------------------------------------------------------
-def test_zero_freshness_static_properties(varnish_host, varnish_port, backend):
+def test_zero_freshness_static_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 10] Zero-Freshness Static Assets Stay Hit-For-Miss ---")
 
     # Static assets the origin allows storing (no no-store/no-cache/private)
@@ -865,33 +897,35 @@ def test_zero_freshness_static_properties(varnish_host, varnish_port, backend):
 
         if "HIT" in r1["x_cache"]:
             print(f"[CRITICAL RFC VIOLATION] First request to zero-freshness static asset {path} served as HIT!")
-            findings.append(Finding(
-                category="RFC 9111 Compliance",
-                name="Zero-freshness static asset served as fresh HIT",
-                description=(
-                    f"Static asset with origin freshness zero ({slug}) was served as "
-                    "X-Cache: HIT on the first request"
-                ),
-                reproducer=f"curl http://{varnish_host}:{varnish_port}{path}",
-                severity="CRITICAL"
-            ))
+            with findings.observe(first=r1, second=r2) as record:
+                record(Finding(
+                    category="RFC 9111 Compliance",
+                    name="Zero-freshness static asset served as fresh HIT",
+                    description=(
+                        f"Static asset with origin freshness zero ({slug}) was served as "
+                        "X-Cache: HIT on the first request"
+                    ),
+                    reproducer=f"curl http://{varnish_host}:{varnish_port}{path}",
+                    severity="CRITICAL"
+                ))
         elif "HIT" in r2["x_cache"]:
             print(f"[CRITICAL RFC VIOLATION] Zero-freshness static asset {path} cached and served as HIT!")
-            findings.append(Finding(
-                category="RFC 9111 Compliance",
-                name="Zero-freshness static asset cached for static TTL",
-                description=(
-                    f"Static asset with origin freshness zero ({slug}) was stored with the "
-                    "static-extension TTL and served as X-Cache: HIT on a repeat request. "
-                    "Builtin Varnish marks beresp.ttl <= 0s hit-for-miss; the shared cache "
-                    "policy must not overwrite that."
-                ),
-                reproducer=(
-                    f"curl http://{varnish_host}:{varnish_port}{path}\n"
-                    f"curl http://{varnish_host}:{varnish_port}{path}"
-                ),
-                severity="CRITICAL"
-            ))
+            with findings.observe(first=r1, second=r2) as record:
+                record(Finding(
+                    category="RFC 9111 Compliance",
+                    name="Zero-freshness static asset cached for static TTL",
+                    description=(
+                        f"Static asset with origin freshness zero ({slug}) was stored with the "
+                        "static-extension TTL and served as X-Cache: HIT on a repeat request. "
+                        "Builtin Varnish marks beresp.ttl <= 0s hit-for-miss; the shared cache "
+                        "policy must not overwrite that."
+                    ),
+                    reproducer=(
+                        f"curl http://{varnish_host}:{varnish_port}{path}\n"
+                        f"curl http://{varnish_host}:{varnish_port}{path}"
+                    ),
+                    severity="CRITICAL"
+                ))
         else:
             print(f"[+] Zero-freshness static asset {path} stayed hit-for-miss")
 
@@ -900,21 +934,24 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     print("==========================================================")
     print("PHASE 2: Coverage-Guided Property-Based Testing (CGPT)")
     print("==========================================================")
-    test_static_asset_properties(varnish_host, varnish_port, backend)
-    test_origin_security_properties(varnish_host, varnish_port, backend)
-    test_accept_encoding_properties(varnish_host, varnish_port, backend)
-    test_http_methods_properties(varnish_host, varnish_port, backend)
-    test_purge_acl_properties(varnish_host, varnish_port, backend)
-    test_5xx_and_grace_properties(varnish_host, varnish_port, backend)
-    test_host_header_properties(varnish_host, varnish_port, backend)
-    test_vary_star_properties(varnish_host, varnish_port, backend)
-    test_authorization_properties(varnish_host, varnish_port, backend)
-    test_zero_freshness_static_properties(varnish_host, varnish_port, backend)
-    print(f"\nPhase 2 Complete. Findings: {len(findings)}")
-    return [f.to_dict() for f in findings]
+    def body(findings):
+        test_static_asset_properties(findings, varnish_host, varnish_port, backend)
+        test_origin_security_properties(findings, varnish_host, varnish_port, backend)
+        test_accept_encoding_properties(findings, varnish_host, varnish_port, backend)
+        test_http_methods_properties(findings, varnish_host, varnish_port, backend)
+        test_purge_acl_properties(findings, varnish_host, varnish_port, backend)
+        test_5xx_and_grace_properties(findings, varnish_host, varnish_port, backend)
+        test_host_header_properties(findings, varnish_host, varnish_port, backend)
+        test_vary_star_properties(findings, varnish_host, varnish_port, backend)
+        test_authorization_properties(findings, varnish_host, varnish_port, backend)
+        test_zero_freshness_static_properties(findings, varnish_host, varnish_port, backend)
+
+    result = run_phase(body)
+    print(f"\nPhase 2 {result.status}. Findings: {len(result.findings)}")
+    return result
 
 if __name__ == "__main__":
     from backend import start_backend
     backend = start_backend(8080)
     res = run_all("127.0.0.1", 80, backend)
-    print(json.dumps(res, indent=2))
+    print(json.dumps(res.to_dict(), indent=2))

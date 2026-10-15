@@ -8,6 +8,8 @@ import subprocess
 import sys
 import tempfile
 
+from phase_result import run_phase
+
 class Finding:
     def __init__(self, category, name, description, reproducer, severity="MEDIUM"):
         self.category = category
@@ -25,7 +27,6 @@ class Finding:
             "severity": self.severity,
         }
 
-findings = []
 
 def run_cmd(cmd, env=None, timeout=10):
     try:
@@ -41,7 +42,7 @@ def run_cmd(cmd, env=None, timeout=10):
     except subprocess.TimeoutExpired:
         return 124, "", "Timed out"
 
-def test_shellcheck():
+def test_shellcheck(findings):
     print("--- Running ShellCheck on repository scripts ---")
     scripts = [
         "/usr/local/bin/render-vcl",
@@ -68,7 +69,7 @@ def test_shellcheck():
 def check_runtime_config(env):
     return run_cmd("/start.sh --check", env=env)
 
-def test_render_vcl_ports():
+def test_render_vcl_ports(findings):
     print("--- Fuzzing render-vcl VARNISH_BACKEND_PORT boundaries ---")
     test_cases = [
         ("0", "Port 0 (reserved / invalid port)", True),
@@ -126,7 +127,7 @@ def test_render_vcl_ports():
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
 
-def test_render_vcl_host_injections():
+def test_render_vcl_host_injections(findings):
     print("--- Fuzzing render-vcl VARNISH_BACKEND_HOST injections & special chars ---")
     payloads = [
         ("127.0.0.1", "Standard IPv4", False),
@@ -174,7 +175,7 @@ def test_render_vcl_host_injections():
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
 
-def test_config_check_rejects_unresolvable_backend():
+def test_config_check_rejects_unresolvable_backend(findings):
     print("--- Checking runtime VCL compilation with an unresolvable backend ---")
     env = os.environ.copy()
     env["VARNISH_BACKEND_HOST"] = "nosuchhost"
@@ -200,7 +201,7 @@ def test_config_check_rejects_unresolvable_backend():
             severity="MEDIUM"
         ))
 
-def test_start_script_boundaries():
+def test_start_script_boundaries(findings):
     print("--- Fuzzing start.sh validation logic ---")
     start_sh = "/start.sh" if os.path.isfile("/start.sh") else os.path.abspath(os.path.join(os.path.dirname(__file__), "../../start.sh"))
     cases = [
@@ -252,15 +253,19 @@ def run_all():
     print("==================================================")
     print("PHASE 1: Static Analysis & Input Boundary Fuzzing")
     print("==================================================")
-    test_shellcheck()
-    test_render_vcl_ports()
-    test_render_vcl_host_injections()
-    test_config_check_rejects_unresolvable_backend()
-    test_start_script_boundaries()
-    print(f"\nPhase 1 Complete. Findings: {len(findings)}")
-    return [f.to_dict() for f in findings]
+
+    def body(findings):
+        test_shellcheck(findings)
+        test_render_vcl_ports(findings)
+        test_render_vcl_host_injections(findings)
+        test_config_check_rejects_unresolvable_backend(findings)
+        test_start_script_boundaries(findings)
+
+    result = run_phase(body)
+    print(f"\nPhase 1 {result.status}. Findings: {len(result.findings)}")
+    return result
 
 if __name__ == "__main__":
     import json
     res = run_all()
-    print(json.dumps(res, indent=2))
+    print(json.dumps(res.to_dict(), indent=2))

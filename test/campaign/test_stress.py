@@ -6,6 +6,8 @@ import http.client
 import random
 import time
 
+from phase_result import COMPLETED, INCOMPLETE, PhaseResult
+
 def worker_request(host, port, req_idx):
     methods = ["GET", "GET", "GET", "HEAD", "POST", "PURGE"]
     method = random.choice(methods)
@@ -43,7 +45,7 @@ class Workload:
         return self.statuses.get(-1, 0)
 
 
-class StressResult:
+class StressResult(PhaseResult):
     """Phase 4 outcome: execution status kept apart from Varnish findings.
 
     "completed" means both health snapshots were available and at least one
@@ -54,15 +56,10 @@ class StressResult:
     """
 
     def __init__(self, workload, initial, final, findings, reasons):
+        super().__init__(INCOMPLETE if reasons else COMPLETED, findings, reasons=reasons)
         self.workload = workload
         self.initial = initial
         self.final = final
-        self.findings = findings
-        self.reasons = reasons
-
-    @property
-    def status(self):
-        return "incomplete" if self.reasons else "completed"
 
     @property
     def requests(self):
@@ -81,6 +78,7 @@ class StressResult:
             "status_distribution": {str(k): v for k, v in sorted(self.workload.statuses.items())},
             "duration_s": round(self.workload.duration, 3),
             "findings": self.findings,
+            "diagnostics": self.diagnostics,
             "initial_snapshot": self.initial.to_dict(),
             "final_snapshot": self.final.to_dict(),
         }
@@ -169,7 +167,17 @@ def run_all(runtime, num_requests=5000, concurrency=20):
     print("==================================================================")
     print(f"PHASE 4: Runtime-Instrumented Concurrency Stress ({num_requests} reqs, c={concurrency})")
     print("==================================================================")
+    try:
+        result = _measure(runtime, num_requests, concurrency)
+    except Exception as exc:
+        result = PhaseResult.from_exception(exc)
+    for reason in result.reasons:
+        print(f"[INCOMPLETE] {reason}")
+    print(f"\nPhase 4 {result.status}. Stress findings: {len(result.findings)}")
+    return result
 
+
+def _measure(runtime, num_requests, concurrency):
     initial = runtime.snapshot()
     print(f"Initial Varnish health: {initial.to_dict()}")
 
@@ -183,8 +191,4 @@ def run_all(runtime, num_requests=5000, concurrency=20):
     if workload.failed_connections:
         print(f"[!] {workload.failed_connections} connection errors occurred out of {num_requests}")
 
-    result = evaluate(initial, final, workload)
-    for reason in result.reasons:
-        print(f"[INCOMPLETE] {reason}")
-    print(f"\nPhase 4 {result.status}. Stress findings: {len(result.findings)}")
-    return result
+    return evaluate(initial, final, workload)
