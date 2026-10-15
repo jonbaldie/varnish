@@ -10,4 +10,6 @@
 - **Compose image**: same Varnish image run with mounted VCL and Docker-network backend configuration.
 - **Campaign runtime**: the Varnish instance the bug-finding campaign starts once through `/start.sh`; startup readiness and the stress phase inspect it through checked health snapshots.
 - **Health snapshot**: one reading of the campaign runtime's required counters and its varnishd manager and child processes. It is either available or unavailable with collector diagnostics; missing values are never defaulted.
-- **Stress result**: the stress phase's report entry. Its execution status (`completed` or `incomplete`) and connection-failure counts are kept apart from Varnish findings.
+- **Phase result**: what one call of a campaign phase returns: an execution status (`completed`, `incomplete`, `error` or `not-run`), that call's Varnish findings, and execution diagnostics such as a traceback. Findings and execution errors are never mixed. Each finding keeps the HTTP evidence it was observed from.
+- **Campaign report**: the JSON file one campaign run writes. Its first write replaces any earlier run's report, and it is rewritten after startup and after every phase. The campaign stops at the first phase that is not `completed`; the phases after it stay `not-run`, and the campaign status is `failed`.
+- **Stress result**: the stress phase's phase result. It also keeps the connection-failure counts and both health snapshots.

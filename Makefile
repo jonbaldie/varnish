@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-compose-fixture-lifecycle test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign test-campaign-runtime-health
+.PHONY: build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-compose-fixture-lifecycle test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign test-campaign-runtime-health test-campaign-report
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-campaign-report test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -714,6 +714,25 @@ test-campaign-runtime-health: build
 		-v "$$(pwd)/test/campaign:/campaign:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
 		varnish-campaign:latest python3 /campaign/assert_runtime_health.py
+
+# test-campaign-report: checks that every campaign phase returns a checked result
+# and that the orchestrator persists it as each phase finishes, including when a
+# phase fails, against real orchestrator runs, start.sh runtimes and sockets.
+test-campaign-report: build
+	@echo "=== Test: Campaign phase execution and report boundary ==="
+	@set -euo pipefail; \
+	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	name="$(CONTAINER_PREFIX)-campaign-report-$$(openssl rand -hex 4)"; \
+	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
+	docker run --rm --name $$name \
+		--cpus 2 \
+		--memory 2g \
+		--memory-swap 2g \
+		--pids-limit 1000 \
+		-v "$$(pwd)/test/campaign:/campaign:ro" \
+		-v "$$(pwd)/test/e2e/fixtures:/fixtures:ro" \
+		-e PYTHONDONTWRITEBYTECODE=1 \
+		varnish-campaign:latest python3 /campaign/assert_campaign_report.py
 
 test-campaign: build
 	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="

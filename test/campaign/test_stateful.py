@@ -6,6 +6,8 @@ import json
 import random
 import time
 
+from phase_result import run_phase
+
 class Action:
     def __init__(self, action_type, **kwargs):
         self.action_type = action_type
@@ -219,38 +221,38 @@ def run_all(varnish_host="127.0.0.1", varnish_port=80, backend=None):
     
     harness = StatefulHarness(varnish_host, varnish_port, backend)
     sequences = generate_random_sequences(60)
-    
-    stateful_findings = []
-    found_bugs = set()
 
-    for seq_num, seq in enumerate(sequences):
-        failed_idx, err = run_sequence(harness, seq)
-        if failed_idx is not None:
-            # Found a failure!
-            prefix = seq[:failed_idx + 1]
-            min_seq, stable_err = minimize_sequence(harness, prefix)
-            if min_seq:
-                signature = (stable_err.split(":")[0], len(min_seq))
-                if signature not in found_bugs:
-                    found_bugs.add(signature)
-                    print(f"\n[STABLE BUG FOUND in sequence #{seq_num}]")
-                    print(f"Error: {stable_err}")
-                    print(f"Minimal sequence ({len(min_seq)} actions):")
-                    for act in min_seq:
-                        print(f"  -> {act}")
+    def body(findings):
+        found_bugs = set()
+        for seq_num, seq in enumerate(sequences):
+            failed_idx, err = run_sequence(harness, seq)
+            if failed_idx is not None:
+                # Found a failure!
+                prefix = seq[:failed_idx + 1]
+                min_seq, stable_err = minimize_sequence(harness, prefix)
+                if min_seq:
+                    signature = (stable_err.split(":")[0], len(min_seq))
+                    if signature not in found_bugs:
+                        found_bugs.add(signature)
+                        print(f"\n[STABLE BUG FOUND in sequence #{seq_num}]")
+                        print(f"Error: {stable_err}")
+                        print(f"Minimal sequence ({len(min_seq)} actions):")
+                        for act in min_seq:
+                            print(f"  -> {act}")
 
-                    stateful_findings.append({
-                        "category": "Stateful Sequence Failure",
-                        "name": stable_err.split("!")[0],
-                        "error": stable_err,
-                        "minimal_sequence": [str(a) for a in min_seq],
-                    })
+                        findings.append({
+                            "category": "Stateful Sequence Failure",
+                            "name": stable_err.split("!")[0],
+                            "error": stable_err,
+                            "minimal_sequence": [str(a) for a in min_seq],
+                        })
 
-    print(f"\nPhase 3 Complete. Unique stable minimal failure sequences found: {len(stateful_findings)}")
-    return stateful_findings
+    result = run_phase(body)
+    print(f"\nPhase 3 {result.status}. Unique stable minimal failure sequences found: {len(result.findings)}")
+    return result
 
 if __name__ == "__main__":
     from backend import start_backend
     backend = start_backend(8080)
     res = run_all("127.0.0.1", 80, backend)
-    print(json.dumps(res, indent=2))
+    print(json.dumps(res.to_dict(), indent=2))
