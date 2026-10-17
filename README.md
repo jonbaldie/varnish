@@ -152,6 +152,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 | `GET /set-cookie` | Must return `Set-Cookie`; must not be shared across clients |
 | `GET /encoding-article` | Honours `Accept-Encoding` with gzip, zlib-wrapped deflate, or plain text, and sends `Vary: Accept-Encoding` |
 | `GET /location-target`, `GET /content-location-target` | Cacheable targets referenced by unsafe-method responses (RFC 9111 §4.4) |
+| POST `/dir/mutate?header=Location&ref=item` (also `Content-Location`, dot segments, query and fragment variants) | Must invalidate the resolved cacheable `/dir/item` or `/item` target; ordinary path resolution must preserve unrelated objects |
 | unsafe `/create-rel`, `/create-abs`, `/create-abs-default-port`, `/create-abs-empty-port`, `/create-https-default-port`, `/create-abs-mixed-host`, `/create-abs-upper-host`, `/create-cross-host`, `/create-cross-host-mixed`, `/create-content-location`, `/create-content-location-abs-mixed`, `/create-content-location-abs-upper-host` | Must return `Location`/`Content-Location` referencing the targets above, including default-port variants, mixed-case and uppercase same-host, and cross-host forms |
 
 **Every response must include:**
@@ -170,7 +171,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
 3. Dynamic URL whose query value ends in a static extension (e.g. `?q=jquery.js`) is not treated as a static asset — cookies reach origin per-client with separate request ids, while a real static asset with a query string (`/static/app.css?v=2`) still strips cookies and caches.
 4. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
-5. A successful unsafe request whose response carries `Location` or `Content-Location` (RFC 9111 §4.4) invalidates the cached object for the referenced URI on the same host (relative or absolute reference), while a cross-host reference must not invalidate same-host cache entries.
+5. A successful unsafe request whose response carries `Location` or `Content-Location` (RFC 9111 §4.4) invalidates the cached object for the referenced URI on the same host (relative or absolute reference), while a cross-host reference must not invalidate same-host cache entries. Relative paths resolve against the unsafe request's directory, remove literal dot segments, preserve the query, and discard the fragment. VCL bounds dot-segment reduction to eight passes; unusually deep references still requiring reduction conservatively invalidate the same host's cache instead of leaving stale data. Scheme-relative (`//host/path`) references remain unsupported.
 
 Out of scope: additional routes, extra Cache-Control permutations, replacing the nginx smoke backend.
 
