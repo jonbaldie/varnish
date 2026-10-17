@@ -305,3 +305,15 @@ sub vcl_deliver {
         set resp.http.X-Cache = "MISS";
     }
 }
+
+sub vcl_hash {
+    # http_gzip_support removes Accept-Encoding before lookup for clients
+    # that do not accept gzip, and the shared object is not varied on
+    # Accept-Encoding. Varnish gunzips a stored gzip object on delivery. It
+    # does not inflate deflate, so a deflate body stored on that shared
+    # object is served unchanged to a later gzip or identity client
+    # (RFC 9111 §4.1). Keep the deflate response on its own object.
+    if (req.http.X-Normalized-AE == "deflate") {
+        hash_data("deflate");
+    }
+}

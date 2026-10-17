@@ -15,8 +15,10 @@ Every response includes X-Backend-Request-Id to prove cache hits vs origin hits.
 """
 
 import email.utils
+import gzip
 import os
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import count
 
@@ -103,6 +105,12 @@ class Handler(BaseHTTPRequestHandler):
         if clean_path == "/echo-headers":
             accept_encoding = self.headers.get("Accept-Encoding") or "none"
             self.respond(200, f"accept_encoding={accept_encoding}\n")
+            return
+
+        # Text response that honours Accept-Encoding. Varnish must not reuse
+        # the deflate body for a client that did not accept deflate.
+        if clean_path == "/encoding-article":
+            self.respond_negotiated_encoding(b"article-plain-text")
             return
 
         if clean_path == "/error":
@@ -938,6 +946,39 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(payload)
+
+    def respond_negotiated_encoding(self, plain: bytes) -> None:
+        """Return plain, gzip, or zlib-wrapped deflate for the request coding.
+
+        The body is the raw coding, not the text contract used by respond(),
+        so a test can tell a deflate payload from plain text. X-Origin-AE is
+        the Accept-Encoding this origin actually received.
+        """
+        request_id = str(next(REQUEST_IDS))
+        accept_encoding = self.headers.get("Accept-Encoding") or ""
+        headers = {
+            "Cache-Control": "max-age=120",
+            "Vary": "Accept-Encoding",
+            "X-Origin-AE": accept_encoding or "none",
+        }
+        body = plain
+        if "gzip" in accept_encoding.lower():
+            headers["Content-Encoding"] = "gzip"
+            body = gzip.compress(plain)
+        elif "deflate" in accept_encoding.lower():
+            headers["Content-Encoding"] = "deflate"
+            body = zlib.compress(plain)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Backend", "hostile")
+        self.send_header("X-Backend-Request-Id", request_id)
+        for name, value in headers.items():
+            self.send_header(name, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
 
 
 def main() -> None:
