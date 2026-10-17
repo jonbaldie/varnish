@@ -1,0 +1,64 @@
+Usage: varnishd [options]
+
+Basic options:
+  -a [<name>=]address[:port][,proto] # HTTP listen address and port
+     [,user=<u>][,group=<g>]   # Can be specified multiple times.
+     [,mode=<m>]               #   default: ":80,HTTP"
+                               # Proto can be "PROXY" or "HTTP" (default)
+                               # user, group and mode set permissions for
+                               #   a Unix domain socket.
+  -b none                      # No backend
+  -b [addr[:port]|path]        # Backend address and port
+                               #   or socket file path
+                               #   default: ":80"
+  -f vclfile                   # VCL program
+                               # Can be specified multiple times.
+  -n dir                       # Working directory
+
+-b can be used only once, and not together with -f
+
+Documentation options:
+  -?                           # Prints this usage message
+  -x parameter                 # Parameter documentation
+  -x vsl                       # VSL record documentation
+  -x cli                       # CLI command documentation
+  -x builtin                   # Builtin VCL program
+  -x optstring                 # List of getopt options
+
+Operations options:
+  -F                           # Run in foreground
+  -T address[:port]            # CLI address
+                               # Can be specified multiple times.
+  -M address:port              # Reverse CLI destination
+                               # Can be specified multiple times.
+  -P file                      # PID file
+  -i identity                  # Identity of varnish instance
+  -I clifile                   # Initialization CLI commands
+
+Tuning options:
+  -t TTL                       # Default TTL
+  -p param=value               # set parameter
+                               # Can be specified multiple times.
+  -s [name=]kind[,options]     # Storage specification
+                               # Can be specified multiple times.
+                               #   -s default (=malloc)
+                               #   -s malloc
+                               #   -s file
+  -l vsl                       # Size of shared memory log
+                               #   vsl: space for VSL records [80m]
+
+Security options:
+  -r param[,param...]          # Set parameters read-only from CLI
+                               # Can be specified multiple times.
+  -S secret-file               # Secret file for CLI authentication
+  -j jail[,options]            # Jail specification
+                               #   -j unix
+                               #   -j none
+
+Advanced/Dev/Debug options:
+  -d                           # debug mode
+                               # Stay in foreground, CLI on stdin.
+  -C                           # Output VCL code compiled to C language
+  -V                           # version
+  -h kind[,options]            # Hash specification
+  -W waiter                    # Waiter implementation

@@ -1,0 +1,3 @@
+encoding 1-3: deflate MISS stored; gzip, identity, and gzip,deflate,br clients HIT with Content-Encoding deflate
+relative-fixed 1-3: Location: item and Content-Location: item left X-Cache HIT; Location: /dir/item produced X-Cache MISS
+check 1-3: storage and extra-args --check exit 0; start exit 2
