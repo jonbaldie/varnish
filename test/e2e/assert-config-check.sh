@@ -120,6 +120,40 @@ fi
 echo "OK: --check preserves runtime validation errors"
 
 name="$(new_name)"
+run_check "$name" -e VARNISH_STORAGE=notastorage,1g
+if [[ "$check_status" == 0 ]] || ! grep -Fq 'Unknown storage method "notastorage"' \
+    "$tmpdir/$name.stdout" "$tmpdir/$name.stderr"; then
+    echo "FAIL: --check did not reject invalid storage method"
+    assert_check_output "$name"
+    exit 1
+fi
+echo "OK: --check rejects invalid storage method"
+
+name="$(new_name)"
+run_check "$name" -e VARNISH_EXTRA_ARGS='--not-a-real-flag'
+if [[ "$check_status" == 0 ]] || ! grep -Fq "invalid option -- '-'" \
+    "$tmpdir/$name.stdout" "$tmpdir/$name.stderr"; then
+    echo "FAIL: --check did not reject invalid extra arguments"
+    assert_check_output "$name"
+    exit 1
+fi
+echo "OK: --check rejects invalid extra arguments"
+
+name="$(new_name)"
+run_check "$name" -e VARNISH_EXTRA_ARGS='-p thread_pool_min=10'
+if [[ "$check_status" != 0 ]]; then
+    echo "FAIL: valid VARNISH_EXTRA_ARGS failed /start.sh --check: $check_status"
+    assert_check_output "$name"
+    exit 1
+fi
+if [[ -s "$tmpdir/$name.stdout" ]]; then
+    echo "FAIL: /start.sh --check with valid VARNISH_EXTRA_ARGS wrote to stdout"
+    cat "$tmpdir/$name.stdout"
+    exit 1
+fi
+echo "OK: valid VARNISH_EXTRA_ARGS passes configuration check without stdout"
+
+name="$(new_name)"
 run_start "$name"
 sleep 2
 if [[ "$(docker inspect -f '{{.State.Running}}' "$name")" != true ]]; then
@@ -138,3 +172,24 @@ if [[ "$start_status" == 0 ]]; then
     exit 1
 fi
 echo "OK: configuration check and real start both reject an unresolvable backend"
+
+name="$(new_name)"
+run_start "$name" -e VARNISH_STORAGE=notastorage,1g
+wait_for_exit "$name"
+start_status="$(docker inspect -f '{{.State.ExitCode}}' "$name")"
+if [[ "$start_status" == 0 ]]; then
+    echo "FAIL: real start accepted the invalid storage method"
+    exit 1
+fi
+echo "OK: configuration check and real start both reject invalid storage method"
+
+name="$(new_name)"
+run_start "$name" -e VARNISH_EXTRA_ARGS='--not-a-real-flag'
+wait_for_exit "$name"
+start_status="$(docker inspect -f '{{.State.ExitCode}}' "$name")"
+if [[ "$start_status" == 0 ]]; then
+    echo "FAIL: real start accepted invalid extra arguments"
+    exit 1
+fi
+echo "OK: configuration check and real start both reject invalid extra arguments"
+

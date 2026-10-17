@@ -89,18 +89,24 @@ if [ -z "${storage_backend}" ] || [ -z "${storage_size}" ]; then
 	fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
 fi
 
-args=(
-	/usr/sbin/varnishd
-	-F
-	-f "${vcl_path}"
-	-a "${listen}"
-	-s "${storage}"
-)
+extra_words=()
+if [ -n "${extra_args}" ]; then
+	read -r -a extra_words <<< "${extra_args}"
+fi
 
 if [ "${check_mode}" = true ]; then
 	compile_output="$(mktemp)"
 	trap 'rm -f "$compile_output"' EXIT
-	if /usr/sbin/varnishd -C -f "${vcl_path}" >"${compile_output}" 2>&1; then
+	check_args=(
+		/usr/sbin/varnishd
+		-C
+		-f "${vcl_path}"
+		-s "${storage}"
+	)
+	if [ "${#extra_words[@]}" -gt 0 ]; then
+		check_args+=("${extra_words[@]}")
+	fi
+	if "${check_args[@]}" >"${compile_output}" 2>&1; then
 		exit 0
 	else
 		compile_status=$?
@@ -109,9 +115,17 @@ if [ "${check_mode}" = true ]; then
 	fi
 fi
 
-if [ -n "${extra_args}" ]; then
-	read -r -a extra_words <<< "${extra_args}"
+args=(
+	/usr/sbin/varnishd
+	-F
+	-f "${vcl_path}"
+	-a "${listen}"
+	-s "${storage}"
+)
+
+if [ "${#extra_words[@]}" -gt 0 ]; then
 	args+=("${extra_words[@]}")
 fi
 
 exec "${args[@]}"
+
