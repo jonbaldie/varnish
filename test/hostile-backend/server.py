@@ -21,6 +21,7 @@ import time
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from itertools import count
+from urllib.parse import parse_qs, urlsplit
 
 
 REQUEST_IDS = count(1)
@@ -129,6 +130,19 @@ class Handler(BaseHTTPRequestHandler):
 
         # Cacheable targets referenced by Location/Content-Location headers
         # returned from unsafe-method endpoints (RFC 9111 §4.4).
+        if clean_path == "/dir/mutate" and self.command == "POST":
+            params = parse_qs(urlsplit(self.path).query)
+            header = params.get("header", ["Location"])[0]
+            reference = params.get("ref", ["item"])[0]
+            self.respond(201, "mutated\n", extra_headers={header: reference})
+            return
+
+        if clean_path in ("/dir/item", "/item", "/dir/", "/dir/a/"):
+            self.respond(
+                200, "relative-target\n", extra_headers={"Cache-Control": "max-age=300"}
+            )
+            return
+
         if clean_path == "/location-target":
             body = "route=location-target\n"
             self.respond(

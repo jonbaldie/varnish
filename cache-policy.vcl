@@ -95,13 +95,27 @@ sub vcl_backend_fetch {
     }
 }
 
+# One RFC 3986 dot-segment reduction pass. Only the path is passed here:
+# dots in queries and percent-encoded dots are not path navigation.
+sub reduce_reference_path {
+    set beresp.http.X-Varnish-Cache-Ref-Path =
+        regsuball(beresp.http.X-Varnish-Cache-Ref-Path, "/[.]/", "/");
+    set beresp.http.X-Varnish-Cache-Ref-Path =
+        regsuball(beresp.http.X-Varnish-Cache-Ref-Path, "/(?![.][.]?/)[^/]*/[.][.](/|$)", "/");
+    set beresp.http.X-Varnish-Cache-Ref-Path =
+        regsub(beresp.http.X-Varnish-Cache-Ref-Path, "^/([.][.]?/)+", "/");
+    set beresp.http.X-Varnish-Cache-Ref-Path =
+        regsub(beresp.http.X-Varnish-Cache-Ref-Path, "/[.]$", "/");
+    set beresp.http.X-Varnish-Cache-Ref-Path =
+        regsub(beresp.http.X-Varnish-Cache-Ref-Path, "^/[.][.]$", "/");
+}
+
 # RFC 9111 §4.4: a successful unsafe response must also invalidate any URI
 # referenced in its Location or Content-Location header. The reference is
 # passed in beresp.http.X-Varnish-Cache-Ref and resolved against the cache
 # identity (host + URL) used by the ban above. Multi-valued fields (Varnish
-# joins repeats with ", ") and scheme-relative ("//host/path") or
-# relative-without-slash references are skipped: they cannot be resolved to
-# a single cache identity safely in VCL.
+# joins repeats with ", ") and scheme-relative ("//host/path") references
+# remain excluded. Relative paths use the unsafe request URL as their base.
 sub invalidate_reference {
     if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
         # Absolute reference: the authority is the cache host identity
@@ -142,6 +156,42 @@ sub invalidate_reference {
         set beresp.http.X-Varnish-Cache-Ref-Host = bereq.http.host;
         set beresp.http.X-Varnish-Cache-Ref-URL =
             regsub(beresp.http.X-Varnish-Cache-Ref, "#.*$", "");
+    } elsif (beresp.http.X-Varnish-Cache-Ref !~ "^//" &&
+             beresp.http.X-Varnish-Cache-Ref !~ "^[A-Za-z][A-Za-z0-9+.-]*:") {
+        set beresp.http.X-Varnish-Cache-Ref-Host = bereq.http.host;
+        set beresp.http.X-Varnish-Cache-Ref-URL =
+            regsub(beresp.http.X-Varnish-Cache-Ref, "#.*$", "");
+        if (beresp.http.X-Varnish-Cache-Ref-URL == "") {
+            # A fragment-only reference inherits the base path and query.
+            set beresp.http.X-Varnish-Cache-Ref-URL = bereq.url;
+        } elsif (beresp.http.X-Varnish-Cache-Ref-URL ~ "^[?]") {
+            set beresp.http.X-Varnish-Cache-Ref-URL =
+                regsub(bereq.url, "[?].*$", "") + beresp.http.X-Varnish-Cache-Ref-URL;
+        } else {
+            set beresp.http.X-Varnish-Cache-Ref-URL =
+                regsub(regsub(bereq.url, "[?].*$", ""), "[^/]*$", "") +
+                beresp.http.X-Varnish-Cache-Ref-URL;
+        }
+        set beresp.http.X-Varnish-Cache-Ref-Path =
+            regsub(beresp.http.X-Varnish-Cache-Ref-URL, "[?].*$", "");
+        set beresp.http.X-Varnish-Cache-Ref-Query =
+            regsub(beresp.http.X-Varnish-Cache-Ref-URL, "^[^?]*", "");
+        # VCL has no loops. Bound exact reduction work; exceptionally deep
+        # navigation falls back to a safe same-host ban rather than stale data.
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        call reduce_reference_path;
+        if (beresp.http.X-Varnish-Cache-Ref-Path ~ "/[.][.]?(/|$)") {
+            ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host);
+            unset beresp.http.X-Varnish-Cache-Ref-Host;
+        }
+        set beresp.http.X-Varnish-Cache-Ref-URL =
+            beresp.http.X-Varnish-Cache-Ref-Path + beresp.http.X-Varnish-Cache-Ref-Query;
     }
 
     # The ban expression parser treats horizontal whitespace as token
@@ -161,6 +211,8 @@ sub invalidate_reference {
     unset beresp.http.X-Varnish-Cache-Ref;
     unset beresp.http.X-Varnish-Cache-Ref-Host;
     unset beresp.http.X-Varnish-Cache-Ref-URL;
+    unset beresp.http.X-Varnish-Cache-Ref-Path;
+    unset beresp.http.X-Varnish-Cache-Ref-Query;
 }
 
 sub vcl_backend_response {

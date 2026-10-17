@@ -43,6 +43,8 @@ run_referenced_invalidation_case() {
     assert_header_contains "${prefix}-mutation" "$ref_header" "$expected_ref" "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Host "${method} ${prefix} mutation"
     assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-URL "${method} ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Path "${method} ${prefix} mutation"
+    assert_header_absent "${prefix}-mutation" X-Varnish-Cache-Ref-Query "${method} ${prefix} mutation"
     if [[ "$expected_ref" == *" "* || "$expected_ref" == *$'\t'* ]]; then
         assert_no_vcl_errors "${method} ${ref_header} reference containing unencoded whitespace"
     fi
@@ -190,6 +192,45 @@ run_variant_port_invalidation_case() {
     echo "OK: ${variant_host} Location invalidated the bare-host target"
 }
 
+run_relative_path_case() {
+    local header="$1" reference="$2" target="$3" encoded_reference
+    encoded_reference="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$reference")"
+    run_referenced_invalidation_case \
+        "relative-${header}-${relative_case}" POST \
+        "/dir/mutate?header=${header}&ref=${encoded_reference}&base=/ignored/directory" \
+        "$target" "$header" "$reference" 201
+    http_request relative-cleanup "${base_url}${target}" -X PURGE
+    relative_case=$((relative_case + 1))
+}
+
+run_relative_path_cases() {
+    local header reference unrelated_id relative_case=0
+    # An unrelated object must survive ordinary same-host path resolution.
+    http_request relative-unrelated-first "${base_url}/location-target?case=${case_id}-unrelated"
+    unrelated_id="$(assert_origin_request_id_present relative-unrelated-first 'unrelated target')"
+    for header in Location Content-Location; do
+        for reference in item ./item ../dir/item a/../item ./a/../../dir/item; do
+            run_relative_path_case "$header" "$reference" /dir/item
+        done
+        run_relative_path_case "$header" 'a/b/../..' /dir/
+        run_relative_path_case "$header" 'a//..' /dir/a/
+        run_relative_path_case "$header" ../../../item /item
+        run_relative_path_case "$header" 'item?next=/../literal#fragment' '/dir/item?next=/../literal'
+        run_relative_path_case "$header" 'item#fragment' /dir/item
+        run_relative_path_case "$header" '/dir/item' /dir/item
+        run_relative_path_case "$header" 'http://localhost:8091/dir/item' /dir/item
+    done
+    http_request relative-unrelated-after "${base_url}/location-target?case=${case_id}-unrelated"
+    assert_cache_state relative-unrelated-after HIT 'unrelated target after relative mutations'
+    assert_same_origin_request_id relative-unrelated-after "$unrelated_id" 'unrelated target after relative mutations'
+
+    # More nested navigation than VCL's bounded reducer must still invalidate.
+    reference="$(printf 'a/%.0s' {1..12})$(printf '../%.0s' {1..12})item"
+    for header in Location Content-Location; do
+        run_relative_path_case "$header" "$reference" /dir/item
+    done
+}
+
 case_id="$(openssl rand -hex 4)"
 tab="$(printf '\t')"
 
@@ -218,6 +259,9 @@ run_referenced_invalidation_case \
     "Content-Location" \
     "/content-location-target?case=${case_id}-mkcol-content-location" \
     200
+
+echo "Testing relative-path references against the unsafe request directory..."
+run_relative_path_cases
 
 echo "Testing safe methods and error responses do not invalidate the target..."
 for method in GET HEAD OPTIONS TRACE; do
