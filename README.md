@@ -90,7 +90,7 @@ The embedded default VCL includes generated backend configuration and the shared
 - **Vary header compliance** — marks origin responses containing wildcard `Vary: *` as uncacheable hit-for-miss, preventing shared caching (RFC 9111 §4.1).
 - **Zero-freshness static assets** — static-extension URLs only receive the policy TTL when the origin granted positive freshness; responses with zero freshness (`max-age=0`, `s-maxage=0`, or an `Expires` date in the past) stay hit-for-miss (RFC 9111 §5.2). An `Expires` value that is not a valid HTTP-date — the common `0`, `-1`, any unparseable string, or an HTTP-date with an invalid month, day, time, or day-of-week — and a valid Unix Epoch HTTP-date (IMF-fixdate, RFC 850, or asctime) count as already expired too (RFC 9111 §5.3) and stay hit-for-miss for **every** URL, static or not, unless `Cache-Control` supplies `max-age`/`s-maxage`, which overrides `Expires`.
 - **PURGE ACL** — allows cache purging from `localhost` and `127.0.0.1`.
-- **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets.
+- **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets. A deflate response is its own cache object: Varnish transcodes gzip, not deflate, so that object is not served to a gzip or identity client.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
 - **Cache TTLs** — 1 day TTL with 7 day grace for static assets; 1 hour grace for other content.
 - **500 error handling** — sets TTL to 0 and 24h grace for backend 5xx errors.
@@ -150,6 +150,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 | `GET /static/app.css` | Cacheable static asset; must echo whether a `Cookie` reached origin |
 | `GET /account` | Dynamic pass-through; must echo caller identity from `Cookie` |
 | `GET /set-cookie` | Must return `Set-Cookie`; must not be shared across clients |
+| `GET /encoding-article` | Honours `Accept-Encoding` with gzip, zlib-wrapped deflate, or plain text, and sends `Vary: Accept-Encoding` |
 | `GET /location-target`, `GET /content-location-target` | Cacheable targets referenced by unsafe-method responses (RFC 9111 §4.4) |
 | unsafe `/create-rel`, `/create-abs`, `/create-abs-default-port`, `/create-abs-empty-port`, `/create-https-default-port`, `/create-abs-mixed-host`, `/create-abs-upper-host`, `/create-cross-host`, `/create-cross-host-mixed`, `/create-content-location`, `/create-content-location-abs-mixed`, `/create-content-location-abs-upper-host` | Must return `Location`/`Content-Location` referencing the targets above, including default-port variants, mixed-case and uppercase same-host, and cross-host forms |
 
