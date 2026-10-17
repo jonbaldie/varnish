@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.12.15
+Date: Sat, 17 Oct 2026 00:59:10 GMT
+Content-Type: text/plain
+Cache-Control: max-age=300
+X-Origin-AE:
+Content-Length: 11
+X-Varnish: 2
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+

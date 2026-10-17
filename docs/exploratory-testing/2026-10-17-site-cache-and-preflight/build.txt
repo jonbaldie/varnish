@@ -1,0 +1,8 @@
+image=varnish-et-a87f:run
+id=sha256:c4f36feb7d9cc6e0f65293164335c4e9818dbfab774360d6fbbbf7b096fe30e4
+created=2026-10-17T01:44:46+01:00
+git_head=dace2719a36dca79f73f65429d3ae711d016f302
+git_master=f4a5b76671258691d3d5cdb0555dbbbe3dd09717
+product_note=cache-policy.vcl start.sh Dockerfile match master; master is 2 commits ahead in campaign tests only
+docker_server=29.8.2 linux/arm64
+varnish=varnishd (varnish-7.1.1 revision 7cee1c581bead20e88d101ab3d72afb29f14d87a)

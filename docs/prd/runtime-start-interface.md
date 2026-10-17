@@ -42,3 +42,5 @@ Deepen the runtime start module so it accepts narrow configuration variables, ap
 This is speculative compared with cache policy and harness work. It should be tackled only if runtime configuration flexibility is a real user need.
 
 Exploratory feedback on the runtime start interface: [2026-09-26 exploratory pass](../exploratory-testing/2026-09-26-runtime-compose-cache.md) (#101, #102).
+
+Exploratory feedback on `/start.sh --check`: [2026-10-17 exploratory pass](../exploratory-testing/2026-10-17-site-cache-and-preflight.md) (#148).

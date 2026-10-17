@@ -1,0 +1,13 @@
+HTTP/1.1 201 Created
+Server: BaseHTTP/0.6 Python/3.12.15
+Date: Sat, 17 Oct 2026 00:59:10 GMT
+Content-Type: text/plain
+Location: item
+X-Origin-AE:
+Content-Length: 7
+X-Varnish: 5
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
