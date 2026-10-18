@@ -157,7 +157,7 @@ def assert_transport_failure_mid_campaign_is_persisted():
                     break
             except (ValueError, KeyError):
                 pass
-            time.sleep(0.05)
+            time.sleep(0.001)
         print("OK: phase 1 result is persisted while the campaign runs")
         # The campaign runtime's varnishd manager and child, killed outright:
         # phase 2's next request meets a refused connection.
