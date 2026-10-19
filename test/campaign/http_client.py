@@ -5,31 +5,35 @@ get()/indexing return a newline-separated display value for repeated fields (not
 an HTTP wire value). The same string-valued mapping is kept in report evidence.
 """
 import http.client
+import io
 import socket
 
 
 class CampaignHeaders(dict):
     def __init__(self, pairs):
-        self._values = {}
-        self._names = {}
+        super().__init__()
+        names = {}
         for name, value in pairs:
-            key = name.lower()
-            self._names.setdefault(key, name)
-            self._values.setdefault(key, []).append(value)
-        super().__init__((self._names[key], "\n".join(values))
-                         for key, values in self._values.items())
+            canonical = names.setdefault(name.lower(), name)
+            if canonical in self:
+                value = self[canonical] + "\n" + value
+            self[canonical] = value
 
     def __getitem__(self, name):
-        return super().__getitem__(self._names[name.lower()])
+        values = self.get_all(name)
+        if not values:
+            raise KeyError(name)
+        return "\n".join(values)
 
     def __contains__(self, name):
-        return name.lower() in self._names
+        return any(key.lower() == name.lower() for key in self.keys())
 
     def get(self, name, default=None):
         return self[name] if name in self else default
 
     def get_all(self, name):
-        return list(self._values.get(name.lower(), ()))
+        return [value for key, display in self.items() if key.lower() == name.lower()
+                for value in display.split("\n")]
 
 
 class CampaignResponse(dict):
@@ -55,6 +59,15 @@ class CampaignResponse(dict):
     backend_request_id = property(lambda self: self["backend_request_id"])
 
 
+class _WireResponseSource:
+    """Feed captured socket bytes into the stdlib HTTP response parser."""
+    def __init__(self, wire):
+        self.wire = wire
+
+    def makefile(self, mode):
+        return io.BytesIO(self.wire)
+
+
 class CampaignHttpClient:
     def __init__(self, host, port, timeout=5):
         self.host, self.port, self.timeout = host, port, timeout
@@ -64,9 +77,18 @@ class CampaignHttpClient:
         try:
             with socket.create_connection((self.host, self.port), self.timeout) as sock:
                 sock.sendall(wire)
-                with http.client.HTTPResponse(sock) as response:
-                    response.begin()
-                    return self._read(response)
+                chunks = []
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+            wire_response = b"".join(chunks)
+            with http.client.HTTPResponse(_WireResponseSource(wire_response)) as response:
+                response.begin()
+                observation = self._read(response)
+            observation.raw_response = wire_response.decode("iso-8859-1")
+            return observation
         except Exception as exc:
             raise RuntimeError(
                 f"raw HTTP {self.host}:{self.port}: {type(exc).__name__}: {exc}"

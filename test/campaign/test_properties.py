@@ -626,7 +626,7 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
     client.send_raw(f"GET {test_path} HTTP/1.1\r\nHost: EXAMPLE.COM\r\nConnection: close\r\n\r\n".encode())
     r_lower = client.send_raw(f"GET {test_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode())
     if "HIT" not in r_lower.x_cache:
-        with findings.observe(response=r_lower) as record:
+        with findings.observe(response=r_lower.raw_response) as record:
             record(Finding(
                 category="Cache Key Normalization",
                 name="Host header casing fragments cache",

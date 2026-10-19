@@ -10,6 +10,12 @@ from http_client import CampaignHttpClient
 
 class Origin(BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/truncated":
+            self.send_response(200)
+            self.send_header("Content-Length", "100")
+            self.end_headers()
+            self.wfile.write(b"short")
+            return
         self.send_response(200)
         self.send_header("Set-Cookie", "session=alice; Path=/; HttpOnly")
         self.send_header("set-cookie", "csrf=xyz; Path=/")
@@ -59,6 +65,15 @@ class TransportTests(unittest.TestCase):
         self.assertEqual(response.headers.get_all("set-cookie"), [
             "session=alice; Path=/; HttpOnly", "csrf=xyz; Path=/"])
         self.assertEqual(response.body, "hello\ufffd")
+        self.assertTrue(response.raw_response.startswith("HTTP/1.0 200 OK\r\n"))
+        self.assertIn("Set-Cookie: session=alice; Path=/; HttpOnly\r\n", response.raw_response)
+        self.assertTrue(response.raw_response.endswith("\r\n\r\nhello\xff"))
+
+    def test_truncated_responses_are_errors_not_observations(self):
+        with self.assertRaisesRegex(RuntimeError, "GET.*IncompleteRead"):
+            self.client.request("GET", "/truncated")
+        with self.assertRaisesRegex(RuntimeError, "raw HTTP.*IncompleteRead"):
+            self.client.send_raw(b"GET /truncated HTTP/1.0\r\n\r\n")
 
     def test_campaign_phases_share_observations_and_report_evidence(self):
         from test_properties import raw_http_request, purge_url
