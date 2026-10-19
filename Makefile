@@ -753,7 +753,7 @@ test-campaign-report: build
 		-v "$$(pwd)/test/campaign:/campaign:ro" \
 		-v "$$(pwd)/test/e2e/fixtures:/fixtures:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
-		varnish-campaign:latest python3 /campaign/assert_campaign_report.py
+		varnish-campaign:latest sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_campaign_report.py'
 
 test-campaign: build
 	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="

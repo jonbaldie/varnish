@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Phase 3: Stateful Action-Sequence Testing with Replay & Minimization."""
 
-import http.client
 import json
 import random
 import time
 
+from http_client import CampaignHttpClient
 from phase_result import run_phase
 
 class Action:
@@ -25,6 +25,7 @@ class StatefulHarness:
         self.varnish_host = varnish_host
         self.varnish_port = varnish_port
         self.backend = backend
+        self.client = CampaignHttpClient(varnish_host, varnish_port)
         self.client_tokens = {} # client_id -> expected secret token
 
     def reset(self):
@@ -49,32 +50,13 @@ class StatefulHarness:
             path = action.params["path"]
             headers = dict(action.params.get("headers", {}))
             
-            # Send request
-            conn = http.client.HTTPConnection(self.varnish_host, self.varnish_port, timeout=5)
-            conn.request(method, path, headers=headers)
-            resp = conn.getresponse()
-            body = resp.read().decode("utf-8", errors="replace")
-            resp_headers = {k.title(): v for k, v in resp.getheaders()}
-            conn.close()
-
-            return {
-                "client_id": client_id,
-                "status": resp.status,
-                "headers": resp_headers,
-                "body": body,
-                "x_cache": resp_headers.get("X-Cache", ""),
-                "set_cookie": resp_headers.get("Set-Cookie", None),
-                "backend_id": resp_headers.get("X-Backend-Request-Id", None),
-            }
+            response = self.client.request(method, path, headers=headers)
+            response["client_id"] = client_id
+            return response
 
         elif action.action_type == "PURGE":
             path = action.params["path"]
-            conn = http.client.HTTPConnection(self.varnish_host, self.varnish_port, timeout=5)
-            conn.request("PURGE", path)
-            resp = conn.getresponse()
-            resp.read()
-            conn.close()
-            return {"purge_status": resp.status}
+            return self.client.purge(path)
 
         elif action.action_type == "TOGGLE_BACKEND":
             is_down = action.params["is_down"]
