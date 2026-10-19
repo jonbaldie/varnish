@@ -15,6 +15,8 @@ import sys
 import tempfile
 import time
 
+from http_client import CampaignResponse
+
 CAMPAIGN_DIR = os.path.dirname(os.path.abspath(__file__))
 POLICY_PATH = "/etc/varnish/cache-policy.vcl"
 MUTANT_POLICY = os.environ.get(
@@ -123,9 +125,10 @@ def assert_mutant_campaign_serializes_surrogate_finding():
     esi = [f for f in surrogate if 'content="ESI/1.0"' in f["name"]]
     check(esi, "the ESI advertisement variant is reported")
     evidence = esi[0]["evidence"]
-    check("HIT" in evidence["second"]["x_cache"], "evidence keeps the observed X-Cache: HIT")
-    check("private" in evidence["second"]["headers"].get("Cache-Control", "")
-          or "no-" in evidence["second"]["headers"].get("Cache-Control", ""),
+    second = CampaignResponse.from_report(evidence["second"])
+    check("HIT" in second.x_cache, "evidence keeps the observed X-Cache: HIT")
+    check("private" in second.headers.get("cache-control", "")
+          or "no-" in second.headers.get("CACHE-CONTROL", ""),
           "evidence keeps the observed Cache-Control header")
     check(all("narrative_error" not in f for f in phase2), "every finding narrative was formatted")
 
@@ -185,6 +188,28 @@ def assert_transport_failure_mid_campaign_is_persisted():
         check(report[phase]["status"] == "not-run", f"{phase} is marked not-run")
 
 
+def assert_transport_header_evidence(backend):
+    from test_properties import raw_http_request
+    from test_stateful import Action, StatefulHarness
+
+    cookies = ["session=alice; Path=/; HttpOnly", "csrf=xyz; Path=/"]
+    backend.set_route("/transport-headers", headers={
+        "Set-Cookie": cookies[0], "set-cookie": cookies[1], "ETag": '"v1"',
+    }, body="transport-body")
+    origin = raw_http_request("127.0.0.1", 8080, "GET", "/transport-headers")
+    phase2 = raw_http_request("127.0.0.1", 80, "GET", "/transport-headers")
+    phase3 = StatefulHarness("127.0.0.1", 80, backend).execute_action(
+        Action("CLIENT_REQUEST", client_id="alice", path="/transport-headers"))
+    for response in (origin, phase2, phase3):
+        check(response.headers.get_all("SET-cookie") == cookies,
+              "origin and both Varnish phases preserve all cookies")
+        check(response.headers.get("etag") == '"v1"', "ETag lookup ignores casing")
+        check(response.backend_request_id != "", "backend request ID is available")
+        restored = CampaignResponse.from_report(json.loads(json.dumps(response)))
+        check(restored.headers.get_all("set-cookie") == cookies,
+              "report evidence preserves all cookies without changing header value types")
+
+
 def assert_repeated_phases_do_not_share_findings():
     print("=== Same phase twice in one process: findings are run-local ===")
     sys.path.insert(0, CAMPAIGN_DIR)
@@ -209,6 +234,7 @@ def assert_repeated_phases_do_not_share_findings():
         })
         try:
             check(runtime.wait_ready(timeout=20), "mutant runtime becomes ready")
+            assert_transport_header_evidence(backend)
             first = test_properties.run_all("127.0.0.1", 80, backend)
             second = test_properties.run_all("127.0.0.1", 80, backend)
         finally:

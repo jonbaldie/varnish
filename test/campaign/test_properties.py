@@ -2,7 +2,6 @@
 """Phase 2: Coverage-guided Property-based Testing (CGPT) & Metamorphic Testing."""
 
 import email.utils
-import http.client
 import json
 import os
 import random
@@ -11,6 +10,7 @@ import time
 import urllib.parse
 import urllib.request
 
+from http_client import CampaignHttpClient
 from phase_result import run_phase
 
 class Finding:
@@ -32,29 +32,10 @@ class Finding:
 
 
 def raw_http_request(host, port, method, path, headers=None, body=None, timeout=5):
-    """Perform raw HTTP request using http.client to preserve exact headers."""
-    conn = http.client.HTTPConnection(host, port, timeout=timeout)
-    hdrs = headers or {}
-    conn.request(method, path, body=body, headers=hdrs)
-    resp = conn.getresponse()
-    resp_body = resp.read()
-    resp_headers = {k.title(): v for k, v in resp.getheaders()}
-    conn.close()
-    return {
-        "status": resp.status,
-        "headers": resp_headers,
-        "body": resp_body.decode("utf-8", errors="replace"),
-        "x_cache": resp_headers.get("X-Cache", ""),
-        "backend_req_id": resp_headers.get("X-Backend-Request-Id", ""),
-        "set_cookie": resp_headers.get("Set-Cookie", None),
-    }
+    return CampaignHttpClient(host, port, timeout).request(method, path, headers, body)
 
 def purge_url(varnish_host, varnish_port, path):
-    try:
-        res = raw_http_request(varnish_host, varnish_port, "PURGE", path)
-        return res["status"] == 200
-    except Exception:
-        return False
+    return CampaignHttpClient(varnish_host, varnish_port).purge(path)
 
 # -------------------------------------------------------------
 # Property 1: Static Asset Extensions, Query Strings & Casing
@@ -558,10 +539,10 @@ def test_5xx_and_grace_properties(findings, varnish_host, varnish_port, backend)
     r1 = raw_http_request(varnish_host, varnish_port, "GET", path)
     r2 = raw_http_request(varnish_host, varnish_port, "GET", path)
 
-    print(f"500 request 1: status={r1['status']}, X-Cache={r1['x_cache']}, backend_id={r1['backend_req_id']}")
-    print(f"500 request 2: status={r2['status']}, X-Cache={r2['x_cache']}, backend_id={r2['backend_req_id']}")
+    print(f"500 request 1: status={r1.status}, X-Cache={r1.x_cache}, backend_id={r1.backend_request_id}")
+    print(f"500 request 2: status={r2.status}, X-Cache={r2.x_cache}, backend_id={r2.backend_request_id}")
 
-    if r1["backend_req_id"] == r2["backend_req_id"] and "HIT" in r2["x_cache"]:
+    if r1.backend_request_id == r2.backend_request_id and "HIT" in r2.x_cache:
         print("[CRITICAL BUG] 500 error was cached and served as HIT!")
         with findings.observe(first=r1, second=r2) as record:
             record(Finding(
@@ -578,27 +559,10 @@ def test_5xx_and_grace_properties(findings, varnish_host, varnish_port, backend)
 # -------------------------------------------------------------
 def test_host_header_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 7] Host Header Compliance & Casing Invariant ---")
-    import socket
-
-    def send_raw(raw_bytes):
-        s = socket.create_connection((varnish_host, varnish_port), timeout=5)
-        s.sendall(raw_bytes)
-        resp = b""
-        while True:
-            try:
-                chunk = s.recv(4096)
-                if not chunk:
-                    break
-                resp += chunk
-            except socket.timeout:
-                break
-        s.close()
-        status_line = resp.split(b"\r\n")[0].decode("iso-8859-1")
-        status_code = int(status_line.split(" ")[1]) if " " in status_line else 0
-        return status_code, resp
+    client = CampaignHttpClient(varnish_host, varnish_port)
 
     # HTTP/1.1 without Host header
-    code, _ = send_raw(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n")
+    code = client.send_raw(b"GET / HTTP/1.1\r\nConnection: close\r\n\r\n").status
     if code != 400:
         with findings.observe(status=code) as record:
             record(Finding(
@@ -610,7 +574,7 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
             ))
 
     # HTTP/1.1 with empty Host header
-    code_empty, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n")
+    code_empty = client.send_raw(b"GET / HTTP/1.1\r\nHost: \r\nConnection: close\r\n\r\n").status
     if code_empty != 400:
         with findings.observe(status=code_empty) as record:
             record(Finding(
@@ -622,7 +586,7 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
             ))
 
     # HTTP/1.1 with whitespace-only Host header
-    code_ws, _ = send_raw(b"GET / HTTP/1.1\r\nHost:   \r\nConnection: close\r\n\r\n")
+    code_ws = client.send_raw(b"GET / HTTP/1.1\r\nHost:   \r\nConnection: close\r\n\r\n").status
     if code_ws != 400:
         with findings.observe(status=code_ws) as record:
             record(Finding(
@@ -634,7 +598,7 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
             ))
 
     # HTTP/1.1 with tab whitespace Host header
-    code_tab, _ = send_raw(b"GET / HTTP/1.1\r\nHost: \t\r\nConnection: close\r\n\r\n")
+    code_tab = client.send_raw(b"GET / HTTP/1.1\r\nHost: \t\r\nConnection: close\r\n\r\n").status
     if code_tab != 400:
         with findings.observe(status=code_tab) as record:
             record(Finding(
@@ -646,7 +610,7 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
             ))
 
     # HTTP/1.0 without Host header should be accepted (200)
-    code_10, _ = send_raw(b"GET / HTTP/1.0\r\nConnection: close\r\n\r\n")
+    code_10 = client.send_raw(b"GET / HTTP/1.0\r\nConnection: close\r\n\r\n").status
     if code_10 != 200:
         with findings.observe(status=code_10) as record:
             record(Finding(
@@ -659,10 +623,10 @@ def test_host_header_properties(findings, varnish_host, varnish_port, backend):
 
     # Host casing invariance
     test_path = f"/?host_prop_test={random.randint(10000, 99999)}"
-    send_raw(f"GET {test_path} HTTP/1.1\r\nHost: EXAMPLE.COM\r\nConnection: close\r\n\r\n".encode())
-    _, r_lower = send_raw(f"GET {test_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode())
-    if b"X-Cache: HIT" not in r_lower:
-        with findings.observe(response=r_lower.decode("iso-8859-1", errors="replace")) as record:
+    client.send_raw(f"GET {test_path} HTTP/1.1\r\nHost: EXAMPLE.COM\r\nConnection: close\r\n\r\n".encode())
+    r_lower = client.send_raw(f"GET {test_path} HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n".encode())
+    if "HIT" not in r_lower.x_cache:
+        with findings.observe(response=r_lower.raw_response) as record:
             record(Finding(
                 category="Cache Key Normalization",
                 name="Host header casing fragments cache",
