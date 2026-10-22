@@ -47,6 +47,8 @@ Use `/start.sh --check` to validate the runtime settings, render the backend con
 docker compose run --rm varnish /start.sh --check
 ```
 
+Preflight passes the same VCL, listen address, storage and extra arguments to `varnishd` as startup. Run it in the deployment's network/DNS context so listen and backend hosts resolve the same way. Varnish's compile mode also attempts to bind the listener, so use a separate container or stop the running instance before checking its configured port. A successful check does not reserve that port for later startup.
+
 The start interface accepts no arguments for normal startup or the single `--check` argument; unknown arguments fail with an error instead of being ignored.
 
 Backend configuration also has named values:

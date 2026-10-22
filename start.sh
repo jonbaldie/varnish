@@ -94,19 +94,25 @@ if [ -n "${extra_args}" ]; then
 	read -r -a extra_words <<< "${extra_args}"
 fi
 
-if [ "${check_mode}" = true ]; then
-	compile_output="$(mktemp)"
-	trap 'rm -f "$compile_output"' EXIT
-	check_args=(
+# Populate an array, preserving argument boundaries for both invocation modes.
+varnishd_args() {
+	args=(
 		/usr/sbin/varnishd
-		-C
+		"$1"
 		-f "${vcl_path}"
+		-a "${listen}"
 		-s "${storage}"
 	)
 	if [ "${#extra_words[@]}" -gt 0 ]; then
-		check_args+=("${extra_words[@]}")
+		args+=("${extra_words[@]}")
 	fi
-	if "${check_args[@]}" >"${compile_output}" 2>&1; then
+}
+
+if [ "${check_mode}" = true ]; then
+	compile_output="$(mktemp)"
+	trap 'rm -f "$compile_output"' EXIT
+	varnishd_args -C
+	if "${args[@]}" >"${compile_output}" 2>&1; then
 		exit 0
 	else
 		compile_status=$?
@@ -115,17 +121,6 @@ if [ "${check_mode}" = true ]; then
 	fi
 fi
 
-args=(
-	/usr/sbin/varnishd
-	-F
-	-f "${vcl_path}"
-	-a "${listen}"
-	-s "${storage}"
-)
-
-if [ "${#extra_words[@]}" -gt 0 ]; then
-	args+=("${extra_words[@]}")
-fi
-
+varnishd_args -F
 exec "${args[@]}"
 

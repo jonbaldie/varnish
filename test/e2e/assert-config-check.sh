@@ -119,6 +119,20 @@ if [[ "$check_status" == 0 ]] || ! grep -Fq 'ERROR: Invalid VARNISH_LISTEN' \
 fi
 echo "OK: --check preserves runtime validation errors"
 
+for listen in nohost.invalid:80 999.1.1.1:80; do
+    for command in '/start.sh --check' '/start.sh'; do
+        name="$(new_name)"
+        run_invocation "$name" "$command" -e "VARNISH_LISTEN=$listen"
+        if [[ "$check_status" == 0 ]] || ! grep -Fq "Got no socket(s) for $listen" \
+            "$tmpdir/$name.stdout" "$tmpdir/$name.stderr"; then
+            echo "FAIL: $command should reject listen host $listen with resolution diagnostics"
+            assert_check_output "$name"
+            exit 1
+        fi
+        echo "OK: $command rejects listen host $listen with resolution diagnostics"
+    done
+done
+
 name="$(new_name)"
 run_check "$name" -e VARNISH_STORAGE=notastorage,1g
 if [[ "$check_status" == 0 ]] || ! grep -Fq 'Unknown storage method "notastorage"' \
