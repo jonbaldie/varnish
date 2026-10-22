@@ -48,10 +48,6 @@ if [ -n "${backend_host}${backend_port}${backend_probe_path}" ]; then
 		fail "VARNISH_BACKEND_* requires VARNISH_VCL to be /etc/varnish/default.vcl"
 	fi
 
-	VARNISH_BACKEND_HOST="${backend_host:-127.0.0.1}" \
-	VARNISH_BACKEND_PORT="${backend_port:-8080}" \
-	VARNISH_BACKEND_PROBE_PATH="${backend_probe_path:-/}" \
-		/usr/local/bin/render-vcl /etc/varnish/backend.vcl
 fi
 
 listen_host="${listen%:*}"
@@ -108,18 +104,43 @@ varnishd_args() {
 	fi
 }
 
-if [ "${check_mode}" = true ]; then
-	compile_output="$(mktemp)"
-	trap 'rm -f "$compile_output"' EXIT
+# Candidates live on the destination filesystem so publication is one atomic rename.
+# Without overrides, retain the caller's backend (including hand-edited files).
+if [ -n "${backend_host}${backend_port}${backend_probe_path}" ]; then
+	scratch="$(mktemp -d /etc/varnish/.backend-XXXXXX)"
+else
+	scratch="$(mktemp -d)"
+fi
+trap 'rm -rf "$scratch"' EXIT
+
+if [ -n "${backend_host}${backend_port}${backend_probe_path}" ]; then
+	/usr/local/bin/render-vcl "${scratch}/backend.vcl"
+fi
+
+if [ "${check_mode}" = true ] || [ -f "${scratch}/backend.vcl" ]; then
 	varnishd_args -C
-	if "${args[@]}" >"${compile_output}" 2>&1; then
-		exit 0
+	# Isolate compiler artifacts from the running instance and concurrent checks.
+	# Relative backend includes resolve to the candidate first, policy includes to
+	# the installed configuration. No VCL text rewriting is needed.
+	args+=(-n "${scratch}/instance")
+	if [ -f "${scratch}/backend.vcl" ]; then
+		args+=(-p "vcl_path=${scratch}:/etc/varnish")
+	fi
+	if "${args[@]}" >"${scratch}/compile-output" 2>&1; then
+		:
 	else
 		compile_status=$?
-		cat "${compile_output}" >&2
+		cat "${scratch}/compile-output" >&2
 		exit "${compile_status}"
 	fi
+	if [ "${check_mode}" = true ]; then
+		exit 0
+	fi
+	mv -f "${scratch}/backend.vcl" /etc/varnish/backend.vcl
 fi
+
+rm -rf "${scratch}"
+trap - EXIT
 
 varnishd_args -F
 exec "${args[@]}"
