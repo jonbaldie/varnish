@@ -41,7 +41,7 @@ The container starts `varnishd` from named runtime values instead of a single ba
 
 For advanced cases, `VARNISH_START` still works as a full-command override, but it cannot be combined with the narrower `VARNISH_*` settings or checked with `--check`.
 
-Use `/start.sh --check` to validate the runtime settings, render the backend configuration, and compile the selected VCL without starting Varnish. This is the supported preflight for CI and rollout checks:
+Use `/start.sh --check` to validate the runtime settings, render candidate backend configuration in scratch space, and compile the selected VCL without starting Varnish or changing live VCL files. This is the supported preflight for CI and rollout checks:
 
 ```bash
 docker compose run --rm varnish /start.sh --check
@@ -57,7 +57,7 @@ Backend configuration also has named values:
 - `VARNISH_BACKEND_PORT` defaults to `8080`
 - `VARNISH_BACKEND_PROBE_PATH` defaults to `/`
 
-These render the embedded `/etc/varnish/backend.vcl`. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead.
+On startup, these render a candidate backend, compile it with the selected VCL, and atomically replace `/etc/varnish/backend.vcl` only after validation succeeds. Checks never publish the candidate. Without overrides, the existing backend file is preserved. If you supply a custom `VARNISH_VCL`, keep backend wiring in that VCL instead. The embedded VCL uses a relative `backend.vcl` include so preflight can resolve the candidate without rewriting VCL.
 
 ## Restarting Varnish
 

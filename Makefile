@@ -63,7 +63,7 @@ test-vcl-compile:
 		-e VARNISH_BACKEND_HOST=localhost \
 		-e VARNISH_BACKEND_PORT=9090 \
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
-		$(IMAGE) /bin/bash -lc '/start.sh --check && grep -q "\\.host = \"localhost\";" /etc/varnish/backend.vcl && grep -q "\\.port = \"9090\";" /etc/varnish/backend.vcl && grep -q "\\.url = \"/healthz\";" /etc/varnish/backend.vcl'; \
+		$(IMAGE) /start.sh --check; \
 	echo "OK: Embedded VCL compiles with configured backend output"; \
 	name="$(CONTAINER_PREFIX)-compose-config-$$(openssl rand -hex 4)"; \
 	docker run --rm --name $$name --add-host web:127.0.0.1 \
@@ -140,6 +140,7 @@ test-container-restart:
 
 test-smoke-runtime-interface:
 	@echo "=== Test: Runtime start interface ==="
+	@bash ./test/e2e/assert-check-isolation.sh $(IMAGE)
 	@bash ./test/e2e/assert-config-check.sh $(IMAGE)
 	@set -euo pipefail; \
 	name="$(CONTAINER_PREFIX)-runtime-$$(openssl rand -hex 4)"; \
@@ -290,17 +291,18 @@ test-smoke-runtime-interface:
 		docker rm -f $$name >/dev/null 2>&1 || true; \
 		exit 1; \
 	fi; \
-	docker exec $$name grep -q '.host = "localhost";' /etc/varnish/backend.vcl || { \
+	active_vcl=$$(docker exec $$name varnishadm vcl.show -v boot); \
+	grep -q '.host = "localhost";' <<< "$$active_vcl" || { \
 		echo "FAIL: expected rendered backend host in backend VCL"; \
 		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name grep -q '.port = "9090";' /etc/varnish/backend.vcl || { \
+	grep -q '.port = "9090";' <<< "$$active_vcl" || { \
 		echo "FAIL: expected rendered backend port in backend VCL"; \
 		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name grep -q '.url = "/healthz";' /etc/varnish/backend.vcl || { \
+	grep -q '.url = "/healthz";' <<< "$$active_vcl" || { \
 		echo "FAIL: expected rendered backend probe path in backend VCL"; \
 		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
