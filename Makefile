@@ -305,7 +305,8 @@ test-smoke-runtime-interface:
 		docker exec $$name cat /etc/varnish/backend.vcl; \
 		exit 1; \
 	}; \
-	docker exec $$name /start.sh --check >/dev/null; \
+	: 'Check uses an unused listener because varnishd -C also binds sockets'; \
+	docker exec -e VARNISH_LISTEN=0.0.0.0:8081 $$name /start.sh --check >/dev/null; \
 	docker rm -f $$name >/dev/null; \
 	echo "OK: invalid listen configuration failed clearly"; \
 	echo "=== Test: Runtime start interface PASSED ==="
