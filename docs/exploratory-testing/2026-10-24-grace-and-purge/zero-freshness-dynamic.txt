@@ -1,0 +1,29 @@
+# Journey 2 observations (each URL requested 3 times, ~1.2 s apart), master @ 8c9a304
+== p1?h_Cache-Control=max-age%3D0
+X-Origin-N: 5 Age: 0 X-Cache: MISS 
+X-Origin-N: 6 Age: 0 X-Cache: MISS 
+X-Origin-N: 7 Age: 0 X-Cache: MISS 
+== p2?h_Cache-Control=s-maxage%3D0
+X-Origin-N: 8 Age: 0 X-Cache: MISS 
+X-Origin-N: 10 Age: 0 X-Cache: MISS 
+X-Origin-N: 11 Age: 0 X-Cache: MISS 
+== p3?h_Expires=Fri,%2001%20Jan%202021%2000:00:00%20GMT
+X-Origin-N: 12 Age: 0 X-Cache: MISS 
+X-Origin-N: 14 Age: 0 X-Cache: MISS 
+X-Origin-N: 15 Age: 0 X-Cache: MISS 
+== p4?h_Cache-Control=max-age%3D1
+X-Origin-N: 16 Age: 0 X-Cache: MISS 
+X-Origin-N: 16 Age: 1 X-Cache: HIT 
+X-Origin-N: 17 Age: 1 X-Cache: HIT 
+== p5?h_Cache-Control=no-cache
+X-Origin-N: 20 Age: 0 X-Cache: MISS 
+X-Origin-N: 21 Age: 0 X-Cache: MISS 
+X-Origin-N: 22 Age: 0 X-Cache: MISS 
+== p6?h_Cache-Control=max-age%3D0,%20must-revalidate
+X-Origin-N: 24 Age: 0 X-Cache: MISS 
+X-Origin-N: 25 Age: 0 X-Cache: MISS 
+X-Origin-N: 26 Age: 0 X-Cache: MISS 
+== app.css?h_Cache-Control=max-age%3D0
+X-Origin-N: 27 Age: 0 X-Cache: MISS 
+X-Origin-N: 29 Age: 0 X-Cache: MISS 
+X-Origin-N: 30 Age: 0 X-Cache: MISS 

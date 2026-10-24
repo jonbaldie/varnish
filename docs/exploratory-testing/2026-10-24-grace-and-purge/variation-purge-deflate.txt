@@ -1,0 +1,13 @@
+up: 200
+fill gzip                          X-Origin-N: 3 X-Cache: MISS 
+fill deflate                       X-Origin-N: 4 X-Cache: MISS 
+PURGE AE='deflate' -> 200 Purged
+after deflate-purge gzip           X-Origin-N: 5 X-Cache: MISS 
+after deflate-purge deflate        X-Origin-N: 4 X-Cache: HIT 
+PURGE AE='' -> 200 Purged
+after plain purge gzip             X-Origin-N: 6 X-Cache: MISS 
+after plain purge deflate          X-Origin-N: 4 X-Cache: HIT 
+-- (b) POST /article
+POST 200
+after POST gzip                    X-Origin-N: 8 X-Cache: MISS 
+after POST deflate                 X-Origin-N: 9 X-Cache: MISS 

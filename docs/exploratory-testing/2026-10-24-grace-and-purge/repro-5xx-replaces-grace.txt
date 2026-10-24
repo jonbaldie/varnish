@@ -1,0 +1,30 @@
+##### STATUS=500
+up: 200
+t0 good page cached          X-Origin-N: 3 Age: 0 X-Cache: MISS  body.status=200
+t0 repeat                    X-Origin-N: 3 Age: 0 X-Cache: HIT  body.status=200
+-- origin now answers /news with 500
+t+1s after expiry            X-Origin-N: 3 Age: 3 X-Cache: HIT  body.status=200
+t+2s after expiry            X-Origin-N: 5 Age: 0 X-Cache: MISS  body.status=500
+t+3s after expiry            X-Origin-N: 7 Age: 0 X-Cache: MISS  body.status=500
+t+4s after expiry            X-Origin-N: 8 Age: 0 X-Cache: MISS  body.status=500
+t+5s after expiry            X-Origin-N: 9 Age: 0 X-Cache: MISS  body.status=500
+##### STATUS=502
+up: 200
+t0 good page cached          X-Origin-N: 3 Age: 0 X-Cache: MISS  body.status=200
+t0 repeat                    X-Origin-N: 3 Age: 0 X-Cache: HIT  body.status=200
+-- origin now answers /news with 502
+t+1s after expiry            X-Origin-N: 3 Age: 3 X-Cache: HIT  body.status=200
+t+2s after expiry            X-Origin-N: 5 Age: 0 X-Cache: MISS  body.status=502
+t+3s after expiry            X-Origin-N: 7 Age: 0 X-Cache: MISS  body.status=502
+t+4s after expiry            X-Origin-N: 8 Age: 0 X-Cache: MISS  body.status=502
+t+5s after expiry            X-Origin-N: 9 Age: 0 X-Cache: MISS  body.status=502
+##### STATUS=503
+up: 200
+t0 good page cached          X-Origin-N: 3 Age: 0 X-Cache: MISS  body.status=200
+t0 repeat                    X-Origin-N: 3 Age: 0 X-Cache: HIT  body.status=200
+-- origin now answers /news with 503
+t+1s after expiry            X-Origin-N: 3 Age: 3 X-Cache: HIT  body.status=200
+t+2s after expiry            X-Origin-N: 5 Age: 0 X-Cache: MISS  body.status=503
+t+3s after expiry            X-Origin-N: 7 Age: 0 X-Cache: MISS  body.status=503
+t+4s after expiry            X-Origin-N: 8 Age: 0 X-Cache: MISS  body.status=503
+t+5s after expiry            X-Origin-N: 9 Age: 0 X-Cache: MISS  body.status=503
