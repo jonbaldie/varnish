@@ -31,7 +31,7 @@ test-restart-docs:
 		echo "OK: README documents container restart workflow"; \
 		echo "=== Test: Restart documentation PASSED ==="
 
-test-e2e-hard: test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-hostile-deflate-encoding test-hostile-deflate-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-hostile-unsafe-location-canary test-compose-image-rebuild
+test-e2e-hard: test-grace-5xx test-e2e-harness-module test-e2e-scenario-config test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-hostile-deflate-encoding test-hostile-deflate-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-hostile-unsafe-location-canary test-compose-image-rebuild
 
 test-compose-image-rebuild:
 	@echo "=== Test: Compose image VCL rebuild and mounted cache policy ==="
@@ -456,6 +456,11 @@ test-e2e-scenario-config:
 test-e2e-harness-module:
 	@echo "=== Test: E2E harness module ==="
 	@./test/e2e/assert-e2e-harness-module.sh
+
+.PHONY: test-grace-5xx
+test-grace-5xx:
+	@echo "=== Test: Origin 5xx preserves graced pages ==="
+	@IMAGE="$(IMAGE)" python3 ./test/e2e/assert-grace-5xx.py
 
 test-5xx-not-cached:
 	@echo "=== Test: Backend 5xx responses not served from cache ==="
