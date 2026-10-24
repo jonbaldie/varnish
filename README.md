@@ -95,7 +95,7 @@ The embedded default VCL includes generated backend configuration and the shared
 - **Accept-Encoding normalisation** — normalises to `gzip` or `deflate` for text; unsets for binary assets. A deflate response is its own cache object: Varnish transcodes gzip, not deflate, so that object is not served to a gzip or identity client.
 - **Cookie stripping** — removes cookies for static assets to improve cache hit rates.
 - **Cache TTLs** — 1 day TTL with 7 day grace for static assets; 1 hour grace for other content.
-- **500 error handling** — sets TTL to 0 and 24h grace for backend 5xx errors.
+- **5xx error handling** — abandons failed background refreshes so the good cached page remains available within its existing grace window. Without a usable stale page, origin errors reach the client but are not cached; errors do not extend grace.
 - **X-Cache header** — adds `HIT`/`MISS` for cache observability.
 
 The backend address differs between modes through the adapter: Docker Compose uses `web:80`; standalone defaults to `127.0.0.1:8080`. `render-vcl` generates backend VCL from `VARNISH_BACKEND_HOST`, `VARNISH_BACKEND_PORT`, and `VARNISH_BACKEND_PROBE_PATH`.

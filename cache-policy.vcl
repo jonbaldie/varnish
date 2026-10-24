@@ -216,6 +216,21 @@ sub invalidate_reference {
 }
 
 sub vcl_backend_response {
+    if (beresp.status >= 500 && beresp.status < 600) {
+        # A failed background refresh must not replace the good graced object,
+        # even when the error carries Set-Cookie or no-store headers.
+        if (bereq.is_bgfetch) {
+            return (abandon);
+        }
+
+        # With no usable stale object, deliver the origin error but never
+        # store it. The TTL belongs only to the hit-for-miss marker.
+        set beresp.uncacheable = true;
+        set beresp.ttl = 120s;
+        set beresp.grace = 0s;
+        return (deliver);
+    }
+
     # Keep the normalized cache identity on the object so a successful
     # unsafe request can invalidate every variant for this exact host and URL.
     set beresp.http.X-Varnish-Cache-Host = bereq.http.host;
@@ -326,11 +341,6 @@ sub vcl_backend_response {
         } else {
             set beresp.grace = 1h;
         }
-    }
-
-    if (beresp.status >= 500 && beresp.status < 600) {
-        set beresp.ttl = 0s;
-        set beresp.grace = 24h;
     }
 
     # RFC 9111 §5.2.2.2, §5.2.2.8, §5.2.2.10: Stale responses must not be served
