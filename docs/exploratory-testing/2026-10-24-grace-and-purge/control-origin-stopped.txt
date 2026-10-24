@@ -1,0 +1,26 @@
+up: 200
+good page cached             X-Origin-N: 3 Age: 0 X-Cache: MISS  code=200
+-- origin stopped
+t+1s after expiry            X-Origin-N: 3 Age: 13 X-Cache: HIT  code=200
+t+2s after expiry            X-Origin-N: 3 Age: 14 X-Cache: HIT  code=200
+t+3s after expiry            X-Origin-N: 3 Age: 15 X-Cache: HIT  code=200
+t+4s after expiry            X-Origin-N: 3 Age: 16 X-Cache: HIT  code=200
+##### varnishlog of 5xx background fetch (static asset /site.css)
+up: 200
+static cached                X-Origin-N: 3 Age: 0 X-Cache: MISS  code=200
+-- origin now answers /site.css with 500
+t+1s                         X-Origin-N: 3 Age: 3 X-Cache: HIT  code=200
+t+2s                         X-Origin-N: 3 Age: 4 X-Cache: HIT  code=200
+t+3s                         X-Origin-N: 3 Age: 5 X-Cache: HIT  code=200
+**  << BeReq    >> 6         
+--  Begin          bereq 5 fetch
+--  BereqURL       /site.css
+--  VCL_call       BACKEND_FETCH
+--  VCL_return     fetch
+--  BerespStatus   200
+--  TTL            RFC 2 10 0 1792802640 1792802640 1792802640 0 2 cacheable
+--  VCL_call       BACKEND_RESPONSE
+--  TTL            VCL 86400 10 0 1792802640 cacheable
+--  TTL            VCL 86400 604800 0 1792802640 cacheable
+--  VCL_return     deliver
+

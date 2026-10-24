@@ -1,0 +1,45 @@
+##### run 1
+up: 200
+fill AE=gzip                       X-Origin-N: 3 X-Cache: MISS 
+repeat AE=gzip                     X-Origin-N: 3 X-Cache: HIT 
+fill AE=deflate                    X-Origin-N: 4 X-Cache: MISS 
+repeat AE=deflate                  X-Origin-N: 4 X-Cache: HIT 
+fill AE=identity                   X-Origin-N: 3 X-Cache: HIT 
+repeat AE=identity                 X-Origin-N: 3 X-Cache: HIT 
+-- PURGE from host via published port (expected: denied)
+405
+-- PURGE from inside the container (localhost)
+200 Purged
+after purge AE=gzip                X-Origin-N: 5 X-Cache: MISS 
+after purge AE=deflate             X-Origin-N: 4 X-Cache: HIT 
+after purge AE=identity            X-Origin-N: 5 X-Cache: HIT 
+##### run 2
+up: 200
+fill AE=gzip                       X-Origin-N: 3 X-Cache: MISS 
+repeat AE=gzip                     X-Origin-N: 3 X-Cache: HIT 
+fill AE=deflate                    X-Origin-N: 4 X-Cache: MISS 
+repeat AE=deflate                  X-Origin-N: 4 X-Cache: HIT 
+fill AE=identity                   X-Origin-N: 3 X-Cache: HIT 
+repeat AE=identity                 X-Origin-N: 3 X-Cache: HIT 
+-- PURGE from host via published port (expected: denied)
+405
+-- PURGE from inside the container (localhost)
+200 Purged
+after purge AE=gzip                X-Origin-N: 5 X-Cache: MISS 
+after purge AE=deflate             X-Origin-N: 4 X-Cache: HIT 
+after purge AE=identity            X-Origin-N: 5 X-Cache: HIT 
+##### run 3
+up: 200
+fill AE=gzip                       X-Origin-N: 3 X-Cache: MISS 
+repeat AE=gzip                     X-Origin-N: 3 X-Cache: HIT 
+fill AE=deflate                    X-Origin-N: 4 X-Cache: MISS 
+repeat AE=deflate                  X-Origin-N: 4 X-Cache: HIT 
+fill AE=identity                   X-Origin-N: 3 X-Cache: HIT 
+repeat AE=identity                 X-Origin-N: 3 X-Cache: HIT 
+-- PURGE from host via published port (expected: denied)
+405
+-- PURGE from inside the container (localhost)
+200 Purged
+after purge AE=gzip                X-Origin-N: 5 X-Cache: MISS 
+after purge AE=deflate             X-Origin-N: 4 X-Cache: HIT 
+after purge AE=identity            X-Origin-N: 5 X-Cache: HIT 

@@ -49,3 +49,5 @@ This top architecture recommendation protects the repo's deepest module and give
 Exploratory feedback on cache policy, Surrogate-Control, and mutation invalidation: [2026-10-03 exploratory pass](../exploratory-testing/2026-10-03-cache-policy-surrogate-invalidation.md) (#124).
 
 Exploratory feedback on content-encoding reuse and relative-path invalidation: [2026-10-17 exploratory pass](../exploratory-testing/2026-10-17-site-cache-and-preflight.md) (#146, #147).
+
+Exploratory feedback on grace under origin 5xx and PURGE of encoding variants: [2026-10-24 exploratory pass](../exploratory-testing/2026-10-24-grace-and-purge.md) (#161, #162).

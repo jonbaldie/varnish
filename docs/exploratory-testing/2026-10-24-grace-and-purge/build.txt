@@ -1,0 +1,51 @@
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 782B done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context:
+#3 transferring context: 2B done
+#3 DONE 0.1s
+
+#4 [1/9] FROM docker.io/library/debian:bookworm-slim
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 24.00kB done
+#5 DONE 0.1s
+
+#6 [2/9] ADD embedded-default.vcl embedded-default.vcl
+#6 CACHED
+
+#7 [3/9] ADD cache-policy.vcl cache-policy.vcl
+#7 CACHED
+
+#8 [4/9] ADD render-vcl.sh render-vcl.sh
+#8 CACHED
+
+#9 [5/9] ADD install.sh install.sh
+#9 CACHED
+
+#10 [7/9] RUN chown -R varnish:varnish /etc/varnish /var/lib/varnish
+#10 CACHED
+
+#11 [6/9] RUN chmod +x install.sh render-vcl.sh && sh ./install.sh && rm install.sh embedded-default.vcl cache-policy.vcl render-vcl.sh
+#11 CACHED
+
+#12 [8/9] ADD start.sh /start.sh
+#12 CACHED
+
+#13 [9/9] RUN chown varnish:varnish /start.sh && chmod +x /start.sh
+#13 CACHED
+
+#14 exporting to image
+#14 exporting layers done
+#14 writing image sha256:e46d9a85926a6b634008b9c21bc13a1741f8ce22077c7e7e308371077b8c277a done
+#14 naming to docker.io/library/varnish-et-20261024:run done
+#14 DONE 0.0s
+docker build -t varnish-et-20261024:run .  0.08s user 0.08s system 21% cpu 0.764 total

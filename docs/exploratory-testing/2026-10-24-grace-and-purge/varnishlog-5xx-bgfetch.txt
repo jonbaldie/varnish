@@ -1,0 +1,55 @@
+up: 200
+cache fill 200
+after expiry #1 200
+after expiry #2 500
+after expiry #3 500
+*   << BeReq    >> 8         
+-   Begin          bereq 7 fetch
+-   BereqURL       /news
+-   VCL_call       BACKEND_FETCH
+-   VCL_return     fetch
+-   BerespStatus   200
+-   TTL            RFC 2 10 0 1792802660 1792802660 1792802659 0 2 cacheable
+-   VCL_call       BACKEND_RESPONSE
+-   TTL            VCL 2 3600 0 1792802660 cacheable
+-   VCL_return     deliver
+
+*   << BeReq    >> 32771     
+-   Begin          bereq 32770 bgfetch
+-   BereqURL       /news
+-   VCL_call       BACKEND_FETCH
+-   VCL_return     fetch
+-   BerespStatus   500
+-   TTL            RFC -1 10 0 1792802663 1792802663 1792802662 0 0 cacheable
+-   VCL_call       BACKEND_RESPONSE
+-   TTL            VCL -1 3600 0 1792802663 cacheable
+-   TTL            VCL 0 3600 0 1792802663 cacheable
+-   TTL            VCL 0 86400 0 1792802663 cacheable
+-   VCL_return     deliver
+
+*   << BeReq    >> 11        
+-   Begin          bereq 10 fetch
+-   BereqURL       /news
+-   VCL_call       BACKEND_FETCH
+-   VCL_return     fetch
+-   BerespStatus   500
+-   TTL            RFC -1 10 0 1792802664 1792802664 1792802664 0 0 cacheable
+-   VCL_call       BACKEND_RESPONSE
+-   TTL            VCL -1 3600 0 1792802664 cacheable
+-   TTL            VCL 0 3600 0 1792802664 cacheable
+-   TTL            VCL 0 86400 0 1792802664 cacheable
+-   VCL_return     deliver
+
+*   << BeReq    >> 65539     
+-   Begin          bereq 65538 fetch
+-   BereqURL       /news
+-   VCL_call       BACKEND_FETCH
+-   VCL_return     fetch
+-   BerespStatus   500
+-   TTL            RFC -1 10 0 1792802665 1792802665 1792802665 0 0 cacheable
+-   VCL_call       BACKEND_RESPONSE
+-   TTL            VCL -1 3600 0 1792802665 cacheable
+-   TTL            VCL 0 3600 0 1792802665 cacheable
+-   TTL            VCL 0 86400 0 1792802665 cacheable
+-   VCL_return     deliver
+
