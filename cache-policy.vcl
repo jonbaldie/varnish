@@ -34,7 +34,13 @@ sub vcl_recv {
         if (!client.ip ~ purge) {
             return (synth(405, "Not allowed"));
         }
-        return (purge);
+        # Encoding variants occupy separate hashes. Invalidate by the same
+        # exact object identity used for unsafe methods, not just one hash.
+        if (!std.ban("obj.http.X-Varnish-Cache-Host == " + req.http.host +
+                     " && obj.http.X-Varnish-Cache-URL == " + req.url)) {
+            return (synth(500, "Purge failed"));
+        }
+        return (synth(200, "Purged"));
     }
 
     unset req.http.X-Normalized-AE;
