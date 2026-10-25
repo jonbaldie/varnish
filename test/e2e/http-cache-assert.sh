@@ -65,7 +65,8 @@ http_request() {
     local url="$2"
     shift 2
 
-    if [ "$#" -eq 2 ] && [ "$1" = "-X" ] && [ "$2" = "PURGE" ]; then
+    if [ "$#" -ge 2 ] && [ "$1" = "-X" ] && [ "$2" = "PURGE" ]; then
+        shift 2
         local varnish_container
         local host_header
         local loopback_url
@@ -89,14 +90,21 @@ import http.client
 import sys
 from urllib.parse import urlsplit
 
-name, url, host_header = sys.argv[1:]
+name, url, host_header, *args = sys.argv[1:]
+headers = {"Host": host_header}
+while args:
+    if len(args) < 2 or args[0] != "-H":
+        raise ValueError("PURGE supports only -H header arguments")
+    key, value = args[1].split(":", 1)
+    headers[key] = value.strip()
+    args = args[2:]
 target = urlsplit(url)
 path = target.path or "/"
 if target.query:
     path += "?" + target.query
 
 connection = http.client.HTTPConnection(target.hostname, target.port, timeout=10)
-connection.request("PURGE", path, headers={"Host": host_header})
+connection.request("PURGE", path, headers=headers)
 response = connection.getresponse()
 
 with open(f"/test-tmp/{name}.headers", "w", encoding="utf-8") as headers_file:
@@ -109,7 +117,7 @@ with open(f"/test-tmp/{name}.body", "wb") as body_file:
     body_file.write(response.read())
 
 connection.close()
-' "$name" "$loopback_url" "$host_header"
+' "$name" "$loopback_url" "$host_header" "$@"
         return
     fi
 
