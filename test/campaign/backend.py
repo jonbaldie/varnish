@@ -10,8 +10,6 @@ Supports dynamic control endpoints to simulate different origin behaviors:
 """
 
 import http.server
-import json
-import os
 import sys
 import threading
 from itertools import count
@@ -55,6 +53,17 @@ class CampaignBackendHandler(http.server.BaseHTTPRequestHandler):
 
         req_id = next(REQUEST_COUNTER)
 
+        # Record before sending any response, including readiness responses.
+        content_length = int(self.headers.get("Content-Length", 0))
+        req_body = self.rfile.read(content_length) if content_length > 0 else b""
+        server.record_request({
+            "request_id": req_id,
+            "method": method,
+            "path": self.path,
+            "headers": dict(self.headers),
+            "body": req_body.decode("utf-8", errors="replace"),
+        })
+
         # Health check
         if self.path in ("/", "/ready", "/healthz"):
             self.send_response(200)
@@ -65,44 +74,10 @@ class CampaignBackendHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(b"OK\n")
             return
 
-        # Special probe endpoint to echo what headers the backend actually received
-        if self.path.startswith("/echo-headers"):
-            headers_dict = {k: v for k, v in self.headers.items()}
-            payload = json.dumps({
-                "request_id": req_id,
-                "method": method,
-                "path": self.path,
-                "headers": headers_dict,
-                "cookie_received": self.headers.get("Cookie", None),
-                "accept_encoding_received": self.headers.get("Accept-Encoding", None),
-            }).encode("utf-8")
-
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.send_header("X-Backend-Request-Id", str(req_id))
-            self.end_headers()
-            if method != "HEAD":
-                self.wfile.write(payload)
-            return
-
         # Check configured routes
         clean_path = self.path.split("?")[0]
         route_config = server.routes.get(clean_path, server.routes.get(self.path, None))
         
-        # Read body if any
-        content_length = int(self.headers.get("Content-Length", 0))
-        req_body = self.rfile.read(content_length) if content_length > 0 else b""
-
-        # Record request in server history
-        server.record_request({
-            "request_id": req_id,
-            "method": method,
-            "path": self.path,
-            "headers": dict(self.headers),
-            "body": req_body.decode("utf-8", errors="replace"),
-        })
-
         if route_config:
             status = route_config.get("status", 200)
             headers = route_config.get("headers", {})
@@ -133,11 +108,54 @@ class CampaignBackendServer(http.server.ThreadingHTTPServer):
         self.is_down = False
         self.routes = {}
         self.history = []
+        self._requests = {}
+        self._sequence = 0
         self.lock = threading.Lock()
 
     def record_request(self, req):
         with self.lock:
             self.history.append(req)
+            self._sequence += 1
+            self._requests[str(req["request_id"])] = (self._sequence, req)
+
+    def get_request(self, request_id=None):
+        """Look up an origin ID; no-argument calls retain TCPServer's accept hook."""
+        if request_id is None:
+            return super().get_request()
+        with self.lock:
+            try:
+                return self._requests[str(request_id)][1]
+            except KeyError:
+                raise KeyError(f"Unknown origin request ID: {request_id!r}") from None
+
+    def checkpoint(self):
+        """Mark the start of an observation window; resets do not rewind it."""
+        with self.lock:
+            return self._sequence
+
+    def requests_since(self, checkpoint):
+        """Snapshot origin interactions recorded after this server's checkpoint."""
+        with self.lock:
+            return [req for sequence, req in self._requests.values() if sequence > checkpoint]
+
+    def request_for_response(self, response, *, since=None):
+        """Correlate a forwarded response, optionally within an observation window.
+
+        HITs retain the old origin ID but did not dispatch a new origin request.
+        Synthetic responses have no origin ID. Both return None. Unknown IDs
+        raise KeyError, rather than quietly using an unrelated history entry.
+        """
+        if "HIT" in response.get("x_cache", ""):
+            return None
+        request_id = response.get("backend_request_id", response.get("backend_req_id"))
+        if not request_id:
+            return None
+        with self.lock:
+            try:
+                sequence, request = self._requests[str(request_id)]
+            except KeyError:
+                raise KeyError(f"Unknown origin request ID: {request_id!r}") from None
+            return request if since is None or sequence > since else None
 
     def set_route(self, path: str, status: int = 200, headers: dict = None, body: str = ""):
         with self.lock:
@@ -151,6 +169,7 @@ class CampaignBackendServer(http.server.ThreadingHTTPServer):
         with self.lock:
             self.routes.clear()
             self.history.clear()
+            self._requests.clear()
 
     def get_history(self):
         with self.lock:

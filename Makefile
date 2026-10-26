@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-campaign-report test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
+test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-campaign-report test-campaign-origin-observation test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -762,6 +762,18 @@ test-campaign-report: build
 		-v "$$(pwd)/test/e2e/fixtures:/fixtures:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
 		varnish-campaign:latest sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_campaign_report.py'
+
+.PHONY: test-campaign-origin-observation
+test-campaign-origin-observation: build
+	@echo "=== Test: Request-correlated campaign origin observations ==="
+	@set -euo pipefail; \
+	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	name="$(CONTAINER_PREFIX)-campaign-origin-$$(openssl rand -hex 4)"; \
+	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 500 \
+		-v "$$(pwd)/test/campaign:/campaign:ro" \
+		-e PYTHONDONTWRITEBYTECODE=1 \
+		varnish-campaign:latest python3 /campaign/assert_origin_observation.py --varnish
 
 test-campaign: build
 	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="

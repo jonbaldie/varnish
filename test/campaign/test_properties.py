@@ -37,12 +37,23 @@ def raw_http_request(host, port, method, path, headers=None, body=None, timeout=
 def purge_url(varnish_host, varnish_port, path):
     return CampaignHttpClient(varnish_host, varnish_port).purge(path)
 
+def require_origin_request(backend, response, checkpoint):
+    request = backend.request_for_response(response, since=checkpoint)
+    if request is None:
+        raise RuntimeError(
+            f"Expected a current origin request: status={response['status']}, "
+            f"X-Cache={response['x_cache']}, origin ID={response['backend_request_id']!r}"
+        )
+    return request
+
+
 # -------------------------------------------------------------
 # Property 1: Static Asset Extensions, Query Strings & Casing
 # -------------------------------------------------------------
 def test_static_asset_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 1] Static Asset Caching, Cookie Stripping & Query Strings ---")
     
+    checkpoint = backend.checkpoint()
     extensions = [
         "css", "js", "png", "jpg", "jpeg", "gif", "ico", "svg", 
         "webp", "avif", "woff", "woff2", "ttf", "eot", "otf", 
@@ -60,9 +71,11 @@ def test_static_asset_properties(findings, varnish_host, varnish_port, backend):
         r2 = raw_http_request(varnish_host, varnish_port, "GET", path, headers={"Cookie": "session=secret_tracker"})
 
         # Check if cookie reached backend
-        backend_history = [h for h in backend.get_history() if h["path"] == path]
+        backend_history = [require_origin_request(backend, r, checkpoint)
+                           for r in (r1, r2) if "HIT" not in r["x_cache"]]
         if backend_history:
-            recv_cookie = backend_history[0]["headers"].get("Cookie", None)
+            recv_cookie = next((h["headers"].get("Cookie") for h in backend_history
+                                if h["headers"].get("Cookie")), None)
             if recv_cookie:
                 print(f"[BUG] Cookie was NOT stripped for standard static asset {path}")
                 with findings.observe(first=r1, second=r2, origin_requests=backend_history) as record:
@@ -107,7 +120,8 @@ def test_static_asset_properties(findings, varnish_host, varnish_port, backend):
             r2 = raw_http_request(varnish_host, varnish_port, "GET", path, headers={"Cookie": "session=user_identity_123"})
 
             # Check if cookie reached backend
-            backend_reqs = [h for h in backend.get_history() if h["path"] == path]
+            backend_reqs = [require_origin_request(backend, r, checkpoint)
+                            for r in (r1, r2) if "HIT" not in r["x_cache"]]
             cookie_leaked = any(h["headers"].get("Cookie") for h in backend_reqs)
 
             if cookie_leaked:
@@ -153,10 +167,10 @@ def test_static_asset_properties(findings, varnish_host, varnish_port, backend):
     for path in cased_paths:
         purge_url(varnish_host, varnish_port, path)
         r1 = raw_http_request(varnish_host, varnish_port, "GET", path, headers={"Cookie": "auth=token123"})
-        backend_reqs = [h for h in backend.get_history() if h["path"] == path]
-        if backend_reqs and backend_reqs[0]["headers"].get("Cookie"):
+        origin_request = require_origin_request(backend, r1, checkpoint)
+        if origin_request["headers"].get("Cookie"):
             print(f"[BUG] Uppercase static extension '{path}' is not recognized: Cookie was not stripped")
-            with findings.observe(first=r1, origin_requests=backend_reqs) as record:
+            with findings.observe(first=r1, origin_request=origin_request) as record:
                 record(Finding(
                     category="Regex Case Sensitivity",
                     name="Static asset regex is case-sensitive (ignores uppercase extensions)",
@@ -318,14 +332,16 @@ def test_origin_security_properties(findings, varnish_host, varnish_port, backen
 def test_accept_encoding_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 3] Accept-Encoding Normalization & RFC Compliance ---")
 
+    checkpoint = backend.checkpoint()
+    # Purge each probe so header assertions always inspect this execution.
     # Test 3.1: Client explicitly forbids gzip via gzip;q=0
-    path = "/echo-headers/test-ae-q0"
+    path = "/observe-headers/test-ae-q0"
+    purge_url(varnish_host, varnish_port, path)
     r = raw_http_request(
         varnish_host, varnish_port, "GET", path,
         headers={"Accept-Encoding": "gzip;q=0, deflate"}
     )
-    data = json.loads(r["body"])
-    backend_ae = data.get("accept_encoding_received")
+    backend_ae = require_origin_request(backend, r, checkpoint)["headers"].get("Accept-Encoding")
 
     if backend_ae == "gzip":
         print(f"[BUG] Client sent 'gzip;q=0' (refusing gzip), but Varnish rewritten to '{backend_ae}'!")
@@ -343,13 +359,13 @@ def test_accept_encoding_properties(findings, varnish_host, varnish_port, backen
             ))
 
     # Test 3.2: Static asset with query string: does Accept-Encoding get stripped?
-    path = "/echo-headers/asset.css?v=2"
+    path = "/observe-headers/asset.css?v=2"
+    purge_url(varnish_host, varnish_port, path)
     r = raw_http_request(
         varnish_host, varnish_port, "GET", path,
         headers={"Accept-Encoding": "gzip, deflate"}
     )
-    data = json.loads(r["body"])
-    backend_ae = data.get("accept_encoding_received")
+    backend_ae = require_origin_request(backend, r, checkpoint)["headers"].get("Accept-Encoding")
     if backend_ae is not None:
         print(f"[BUG] Static asset with query string '{path}' did NOT have Accept-Encoding stripped: received '{backend_ae}'")
         with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
@@ -366,13 +382,13 @@ def test_accept_encoding_properties(findings, varnish_host, varnish_port, backen
 
     # Test 3.3: Uppercase / mixed-case content-codings normalized (RFC 9110 §8.4.1)
     for sample_ae, expected_ae in [("Gzip", "gzip"), ("GZIP", "gzip"), ("Deflate", "deflate"), ("DEFLATE", "deflate")]:
-        path = f"/echo-headers/test-ae-casing-{sample_ae.lower()}"
+        path = f"/observe-headers/test-ae-casing-{sample_ae.lower()}"
+        purge_url(varnish_host, varnish_port, path)
         r = raw_http_request(
             varnish_host, varnish_port, "GET", path,
             headers={"Accept-Encoding": sample_ae}
         )
-        data = json.loads(r["body"])
-        backend_ae = data.get("accept_encoding_received")
+        backend_ae = require_origin_request(backend, r, checkpoint)["headers"].get("Accept-Encoding")
         if backend_ae != expected_ae:
             print(f"[BUG] Client sent '{sample_ae}' but Varnish forwarded '{backend_ae}' instead of '{expected_ae}'!")
             with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
@@ -388,13 +404,13 @@ def test_accept_encoding_properties(findings, varnish_host, varnish_port, backen
                 ))
 
     # Test 3.4: Uppercase Q parameter refusal respected (RFC 9110 §5.6.6)
-    path = "/echo-headers/test-ae-upper-q0"
+    path = "/observe-headers/test-ae-upper-q0"
+    purge_url(varnish_host, varnish_port, path)
     r = raw_http_request(
         varnish_host, varnish_port, "GET", path,
         headers={"Accept-Encoding": "gzip; Q=0, deflate"}
     )
-    data = json.loads(r["body"])
-    backend_ae = data.get("accept_encoding_received")
+    backend_ae = require_origin_request(backend, r, checkpoint)["headers"].get("Accept-Encoding")
     if backend_ae != "deflate":
         print(f"[BUG] Client sent 'gzip; Q=0, deflate' but Varnish forwarded '{backend_ae}' instead of 'deflate'!")
         with findings.observe(response=r, origin_accept_encoding=backend_ae) as record:
@@ -416,6 +432,7 @@ def test_accept_encoding_properties(findings, varnish_host, varnish_port, backen
 def test_http_methods_properties(findings, varnish_host, varnish_port, backend):
     print("\n--- [CGPT Property 4] HTTP Methods Caching & Cache Invalidation ---")
 
+    checkpoint = backend.checkpoint()
     # Prime a URL with GET
     path = "/api/resource-item"
     purge_url(varnish_host, varnish_port, path)
@@ -463,9 +480,9 @@ def test_http_methods_properties(findings, varnish_host, varnish_port, backend):
                         reproducer=f"curl -X {method} -H 'Cookie: {cookie_val}' http://{varnish_host}:{varnish_port}{spath}",
                         severity="CRITICAL"
                     ))
-            backend_reqs = [h for h in backend.get_history() if h["path"] == spath and h["method"] == method]
-            if not backend_reqs:
-                with findings.observe(response=r_mut, origin_requests=backend_reqs) as record:
+            origin_request = backend.request_for_response(r_mut, since=checkpoint)
+            if origin_request is None:
+                with findings.observe(response=r_mut, origin_request=origin_request) as record:
                     record(Finding(
                         category="HTTP Method Safety",
                         name=f"{method} to static URL did not reach origin",
@@ -473,10 +490,10 @@ def test_http_methods_properties(findings, varnish_host, varnish_port, backend):
                         reproducer=f"curl -X {method} http://{varnish_host}:{varnish_port}{spath}",
                         severity="HIGH"
                     ))
-            elif backend_reqs[-1]["headers"].get("Cookie") != cookie_val:
-                actual_cookie = backend_reqs[-1]["headers"].get("Cookie")
+            elif origin_request["headers"].get("Cookie") != cookie_val:
+                actual_cookie = origin_request["headers"].get("Cookie")
                 print(f"[CRITICAL BUG] {method} to static URL '{spath}' stripped Cookie! (got {actual_cookie})")
-                with findings.observe(response=r_mut, origin_requests=backend_reqs) as record:
+                with findings.observe(response=r_mut, origin_request=origin_request) as record:
                     record(Finding(
                         category="Cookie Stripping / Mutating Methods",
                         name=f"Mutating {method} to static asset extension stripped Cookie header",

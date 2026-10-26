@@ -141,6 +141,24 @@ COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard
 
 Wait for this command to return before you start another Docker test or campaign. The test recipes use teardown traps to remove containers and Compose resources. Do not interrupt or overlap that teardown.
 
+### Campaign origin observations
+
+`make test-campaign-origin-observation` checks the campaign backend observation API
+against real origin sockets and Varnish. In `test/campaign/backend.py`:
+
+- `get_request(request_id)` looks up an integer or wire-string origin ID in O(1),
+  raising `KeyError` for unknown IDs. No-argument calls retain the server's socket
+  accept hook.
+- `request_for_response(response)` correlates a campaign HTTP response with its
+  origin record. Cache HITs and synthetic responses return `None`: a cached
+  `X-Backend-Request-Id` does not represent a new origin interaction.
+- `checkpoint()` marks an observation window. `requests_since(checkpoint)` returns
+  its records; `request_for_response(response, since=checkpoint)` excludes older
+  interactions. Checkpoints belong to one server and remain valid across resets.
+
+Property checks inspect correlated records, not path-filtered global history or
+JSON echo bodies. Header probes purge their URLs before observing origin headers.
+
 ### Hostile Backend Fixture Contract
 
 The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate hostile backend fixture exists only to prove behaviours nginx can't expose clearly enough for E2E assertions.
