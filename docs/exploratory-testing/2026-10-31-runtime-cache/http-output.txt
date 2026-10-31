@@ -1,0 +1,269 @@
+Build: fc5f04b032fc8f6946a13e3d7ad311576e3e74d6
+sha256:3dd42676b89508ea913a2b41e6d8c59770eb9c369463166b7d532ae283f45627
+
+== preflight valid ==
+exit=0
+
+== preflight invalid port ==
+ERROR: Invalid VARNISH_LISTEN '0.0.0.0:65536'; expected port between 1 and 65535
+exit nonzero as expected
+
+== static cache and query isolation ==
+
+-- static-first --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 3
+Content-Type: text/html
+Content-Length: 240
+X-Varnish: 5
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 3, "method": "GET", "path": "/static/site.css?v=1&h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "6"}}
+
+-- static-again --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 3
+Content-Type: text/html
+Content-Length: 240
+X-Varnish: 32772 6
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: HIT
+Connection: keep-alive
+
+{"n": 3, "method": "GET", "path": "/static/site.css?v=1&h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "6"}}
+
+-- static-other-query --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 4
+Content-Type: text/html
+Content-Length: 240
+X-Varnish: 8
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 4, "method": "GET", "path": "/static/site.css?v=2&h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "9"}}
+
+== dynamic cookie and authorization isolation ==
+
+-- account-alice --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 5
+Content-Type: text/html
+Content-Length: 259
+X-Varnish: 32774
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 5, "method": "GET", "path": "/account?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "Cookie": "session=alice", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32775"}}
+
+-- account-bob --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 6
+Content-Type: text/html
+Content-Length: 254
+X-Varnish: 11
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 6, "method": "GET", "path": "/account?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "Cookie": "session=bob", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "12"}}
+
+-- auth-alice --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 7
+Content-Type: text/html
+Content-Length: 265
+X-Varnish: 32777
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 7, "method": "GET", "path": "/profile?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "Authorization": "Bearer alice", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32778"}}
+
+-- auth-bob --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 8
+Content-Type: text/html
+Content-Length: 260
+X-Varnish: 14
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 8, "method": "GET", "path": "/profile?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "Authorization": "Bearer bob", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "15"}}
+
+== unsafe method invalidates same URL ==
+
+-- unrelated-prime --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 9
+Content-Type: text/html
+Content-Length: 234
+X-Varnish: 32780
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 9, "method": "GET", "path": "/unrelated?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32781"}}
+
+-- unrelated-hit --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 9
+Content-Type: text/html
+Content-Length: 234
+X-Varnish: 17 32781
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: HIT
+Connection: keep-alive
+
+{"n": 9, "method": "GET", "path": "/unrelated?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32781"}}
+
+-- item-first --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 10
+Content-Type: text/html
+Content-Length: 230
+X-Varnish: 32783
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 10, "method": "GET", "path": "/item?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32784"}}
+
+-- item-hit --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 10
+Content-Type: text/html
+Content-Length: 230
+X-Varnish: 19 32784
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: HIT
+Connection: keep-alive
+
+{"n": 10, "method": "GET", "path": "/item?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32784"}}
+
+-- item-post --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 11
+Content-Type: text/html
+Content-Length: 231
+X-Varnish: 32786
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 11, "method": "POST", "path": "/item?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32787"}}
+
+-- item-after --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 12
+Content-Type: text/html
+Content-Length: 227
+X-Varnish: 21
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: MISS
+Connection: keep-alive
+
+{"n": 12, "method": "GET", "path": "/item?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "22"}}
+
+-- item-hit-again --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 12
+Content-Type: text/html
+Content-Length: 227
+X-Varnish: 32789 22
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: HIT
+Connection: keep-alive
+
+{"n": 12, "method": "GET", "path": "/item?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "22"}}
+
+-- unrelated-after --
+HTTP/1.1 200 OK
+Server: BaseHTTP/0.6 Python/3.13.18
+Date: Sat, 31 Oct 2026 18:02:56 GMT
+Cache-Control: max-age=600
+X-Origin-N: 9
+Content-Type: text/html
+Content-Length: 234
+X-Varnish: 24 32781
+Age: 0
+Via: 1.1 varnish (Varnish/7.1)
+Accept-Ranges: bytes
+X-Cache: HIT
+Connection: keep-alive
+
+{"n": 9, "method": "GET", "path": "/unrelated?h_Cache-Control=max-age%3D600", "status": 200, "headers": {"User-Agent": "curl/8.18.0", "Accept": "*/*", "X-Forwarded-For": "172.18.0.1", "host": "127.0.0.1:32852", "X-Varnish": "32781"}}
+
+== preflight refuses command override ==
+ERROR: VARNISH_START cannot be used with --check
+exit nonzero as expected

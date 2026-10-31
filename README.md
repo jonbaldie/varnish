@@ -141,6 +141,10 @@ COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard
 
 Wait for this command to return before you start another Docker test or campaign. The test recipes use teardown traps to remove containers and Compose resources. Do not interrupt or overlap that teardown.
 
+### Exploratory testing
+
+See the [runtime preflight and HTTP cache exploratory report](docs/exploratory-testing/2026-10-31-runtime-cache.md) for user journeys and captured responses.
+
 ### Campaign origin observations
 
 `make test-campaign-origin-observation` checks the campaign backend observation API
