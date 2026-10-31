@@ -33,6 +33,6 @@ The image and origin are real network services, but the origin is a configurable
 
 The required `COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard` first failed because this environment created the worktree with mode 0700 and bind-mounted VCL files with mode 0600. After making worktree files readable to the container user, the retry completed `test` and the hostile scenarios through revalidation. It then waited for a pre-existing `/tmp/varnish-unsafe-location-test-8091.lock` and was interrupted by the command timeout. The lock was not removed.
 
-The remaining unsafe-location, mutant canary, and Compose image rebuild targets passed serially after a temporary, pass-specific lock path was substituted in the test runner. The runner was restored afterward. These split runs are not a single uninterrupted green full-gate run. The remote PR CI is the independent full-gate check.
+The remaining unsafe-location, mutant canary, and Compose image rebuild targets passed serially after a temporary, pass-specific lock path was substituted in the test runner. A subsequent complete `COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard` run also passed with that temporary lock path. The runner was restored afterward. The first remote PR CI run failed in the campaign teardown test when a PURGE received HTTP 500 rather than a connection error. A full workflow retry passed.
 
 The runtime check errors identify the invalid setting, but the full-command override error does not suggest how to validate that override. The README documents that limitation.
