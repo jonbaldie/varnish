@@ -196,6 +196,17 @@ def test_render_vcl_host_injections(findings):
                 with open(tmp.name, "r") as f:
                     content = f.read()
 
+                # Check for newline injection: does render-vcl prevent multi-line injection?
+                if "\n" in host and rc == 0:
+                    print(f"[BUG] render-vcl does not escape or reject newlines in VARNISH_BACKEND_HOST: '{host}'")
+                    findings.append(Finding(
+                        category="VCL Injection / Sanitization",
+                        name="VARNISH_BACKEND_HOST newline injection vulnerability",
+                        description=f"render-vcl.sh allows unescaped newlines in VARNISH_BACKEND_HOST, enabling VCL syntax corruption or arbitrary VCL directive injection. Rendered content:\n{content}",
+                        reproducer=f"VARNISH_BACKEND_HOST=$'127.0.0.1\\n.probe = none;' /usr/local/bin/render-vcl /tmp/backend.vcl",
+                        severity="HIGH"
+                    ))
+
                 # Compile the complete runtime VCL using the backend values under test.
                 check = check_runtime_config(env)
                 if check.returncode != 0:
@@ -208,16 +219,6 @@ def test_render_vcl_host_injections(findings):
                 elif rc != 0:
                     raise RuntimeError(f"Host rejection was not reproduced by the configuration check: {check}")
 
-                # Check for newline injection: does render-vcl prevent multi-line injection?
-                if "\n" in host and rc == 0:
-                    print(f"[BUG] render-vcl does not escape or reject newlines in VARNISH_BACKEND_HOST: '{host}'")
-                    findings.append(Finding(
-                        category="VCL Injection / Sanitization",
-                        name="VARNISH_BACKEND_HOST newline injection vulnerability",
-                        description=f"render-vcl.sh allows unescaped newlines in VARNISH_BACKEND_HOST, enabling VCL syntax corruption or arbitrary VCL directive injection. Rendered content:\n{content}",
-                        reproducer=f"VARNISH_BACKEND_HOST=$'127.0.0.1\\n.probe = none;' /usr/local/bin/render-vcl /tmp/backend.vcl",
-                        severity="HIGH"
-                    ))
         finally:
             if os.path.exists(tmp.name):
                 os.unlink(tmp.name)
