@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from phase_result import run_phase
 
+RESOLUTION_ERROR = r"failed to resolve|could not resolve|could not be resolved|name or service not known|no address associated"
+
 class Finding:
     def __init__(self, category, name, description, reproducer, severity="MEDIUM"):
         self.category = category
@@ -87,6 +89,9 @@ def test_shellcheck(findings):
             else:
                 print(f"[+] Shellcheck clean: {s}")
 
+def probe_env():
+    return {key: value for key, value in os.environ.items() if not key.startswith("VARNISH_")}
+
 def check_runtime_config(env):
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -113,7 +118,8 @@ def test_render_vcl_ports(findings):
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".vcl")
         tmp.close()
         try:
-            env = os.environ.copy()
+            env = probe_env()
+            env["VARNISH_BACKEND_HOST"] = "127.0.0.1"
             env["VARNISH_BACKEND_PORT"] = port
             result = run_cmd(["/usr/local/bin/render-vcl", tmp.name], env=env).require_execution()
             rc, err = result.returncode, result.stderr
@@ -124,6 +130,8 @@ def test_render_vcl_ports(findings):
                 check = check_runtime_config(env)
                 check_rc = check.returncode
                 compiler_output = (check.stdout + check.stderr).strip()
+                if check_rc != 0 and not (port and port in compiler_output and re.search(r"VCC|VCL compilation", compiler_output, re.IGNORECASE)):
+                    raise RuntimeError(f"Port configuration could not be measured: {check}")
                 if expect_error and check_rc != 0:
                     print(f"[BUG] render-vcl allowed invalid port '{port}' ({label}); config check failed: {compiler_output}")
                     findings.append(Finding(
@@ -176,7 +184,7 @@ def test_render_vcl_host_injections(findings):
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".vcl")
         tmp.close()
         try:
-            env = os.environ.copy()
+            env = probe_env()
             env["VARNISH_BACKEND_HOST"] = host
             result = run_cmd(["/usr/local/bin/render-vcl", tmp.name], env=env).require_execution()
             rc = result.returncode
@@ -192,9 +200,13 @@ def test_render_vcl_host_injections(findings):
                 check = check_runtime_config(env)
                 if check.returncode != 0:
                     output = check.stdout + check.stderr
-                    if rc != 0 and "Invalid VARNISH_BACKEND_HOST" not in output:
+                    rejected = rc != 0 and "Invalid VARNISH_BACKEND_HOST" in output
+                    unresolved = rc == 0 and host in output and re.search(RESOLUTION_ERROR, output, re.IGNORECASE)
+                    if not (rejected or unresolved):
                         raise RuntimeError(f"Host configuration could not be measured: {check}")
                     print(f"[+] /start.sh --check rejected backend host '{host}' ({label}): {output.strip()}")
+                elif rc != 0:
+                    raise RuntimeError(f"Host rejection was not reproduced by the configuration check: {check}")
 
                 # Check for newline injection: does render-vcl prevent multi-line injection?
                 if "\n" in host and rc == 0:
@@ -212,7 +224,7 @@ def test_render_vcl_host_injections(findings):
 
 def test_config_check_rejects_unresolvable_backend(findings):
     print("--- Checking runtime VCL compilation with an unresolvable backend ---")
-    env = os.environ.copy()
+    env = probe_env()
     env["VARNISH_BACKEND_HOST"] = "nosuchhost"
     result = check_runtime_config(env)
     rc = result.returncode
@@ -226,7 +238,7 @@ def test_config_check_rejects_unresolvable_backend(findings):
             reproducer="VARNISH_BACKEND_HOST=nosuchhost /start.sh --check",
             severity="HIGH"
         ))
-    elif re.search(r"failed to resolve|could not resolve|could not be resolved|name or service not known|no address associated", output, re.IGNORECASE):
+    elif "nosuchhost" in output and re.search(RESOLUTION_ERROR, output, re.IGNORECASE):
         print(f"[+] /start.sh --check reported the expected resolution failure: {output.strip()}")
     else:
         raise RuntimeError(f"Backend resolution could not be measured: {result}")
@@ -250,7 +262,7 @@ def test_start_script_boundaries(findings):
     ]
 
     for env_override, label in cases:
-        env = {key: value for key, value in os.environ.items() if not key.startswith("VARNISH_")}
+        env = probe_env()
         env.update(env_override)
         # Run start.sh with timeout
         result = run_cmd([start_sh], env=env, timeout=3).require_execution()

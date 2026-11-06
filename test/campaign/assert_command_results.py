@@ -11,7 +11,8 @@ from orchestrator import CampaignReport
 from phase_result import run_phase
 from test_static_analysis import (
     check_runtime_config, run_cmd, test_config_check_rejects_unresolvable_backend,
-    test_render_vcl_ports, test_shellcheck, test_start_script_boundaries,
+    test_render_vcl_host_injections, test_render_vcl_ports, test_shellcheck,
+    test_start_script_boundaries,
 )
 
 
@@ -115,20 +116,22 @@ def main():
         old_start = os.environ.get("VARNISH_START")
         os.environ["VARNISH_START"] = "true"
         try:
-            result = run_phase(test_start_script_boundaries)
+            for test in (test_start_script_boundaries, test_render_vcl_ports, test_render_vcl_host_injections):
+                result = run_phase(test)
+                assert result.status == "completed", result.to_dict()
+                assert not result.findings, result.to_dict()
         finally:
             if old_start is None:
                 del os.environ["VARNISH_START"]
             else:
                 os.environ["VARNISH_START"] = old_start
-        assert result.status == "completed", result.to_dict()
-        assert not result.findings, result.to_dict()
 
         vcl = "/etc/varnish/default.vcl"
         hidden = vcl + ".issue166-test"
         os.rename(vcl, hidden)
         try:
-            for test in (test_start_script_boundaries, test_config_check_rejects_unresolvable_backend):
+            for test in (test_start_script_boundaries, test_render_vcl_ports,
+                         test_render_vcl_host_injections, test_config_check_rejects_unresolvable_backend):
                 result = run_phase(test)
                 assert result.status == "error", result.to_dict()
                 assert not result.findings, result.to_dict()
