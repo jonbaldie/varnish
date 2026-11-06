@@ -3,10 +3,9 @@
 
 import os
 import re
-import shutil
 import subprocess
-import sys
 import tempfile
+from dataclasses import dataclass
 
 from phase_result import run_phase
 
@@ -28,19 +27,38 @@ class Finding:
         }
 
 
+@dataclass(frozen=True)
+class CommandResult:
+    command: tuple
+    status: str
+    returncode: int | None
+    stdout: str
+    stderr: str
+
+    def require_execution(self):
+        if (self.status != "exited" or self.returncode < 0
+                or self.returncode in (126, 127)):
+            raise RuntimeError(f"Command execution failed: {self}")
+        return self
+
+
+def _text(value):
+    if isinstance(value, bytes):
+        return value.decode(errors="replace")
+    return value or ""
+
+
 def run_cmd(cmd, env=None, timeout=10):
+    command = tuple(cmd)
     try:
         res = subprocess.run(
-            cmd,
-            shell=True,
-            capture_output=True,
-            text=True,
-            env=env or os.environ,
-            timeout=timeout,
+            command, capture_output=True, text=True, env=env, timeout=timeout,
         )
-        return res.returncode, res.stdout, res.stderr
-    except subprocess.TimeoutExpired:
-        return 124, "", "Timed out"
+        return CommandResult(command, "exited", res.returncode, res.stdout, res.stderr)
+    except subprocess.TimeoutExpired as exc:
+        return CommandResult(command, "timeout", None, _text(exc.stdout), _text(exc.stderr))
+    except OSError as exc:
+        return CommandResult(command, "launch-error", None, "", str(exc))
 
 def test_shellcheck(findings):
     print("--- Running ShellCheck on repository scripts ---")
@@ -53,13 +71,15 @@ def test_shellcheck(findings):
     ]
     for s in scripts:
         if os.path.isfile(s):
-            rc, out, err = run_cmd(f"shellcheck -s bash {s}")
-            if rc != 0:
-                print(f"[!] Shellcheck issues in {s}:\n{out}")
+            result = run_cmd(["shellcheck", "-s", "bash", s]).require_execution()
+            if result.returncode not in (0, 1):
+                raise RuntimeError(f"ShellCheck could not analyze {s}: {result}")
+            if result.returncode == 1:
+                print(f"[!] Shellcheck issues in {s}:\n{result.stdout}")
                 findings.append(Finding(
                     category="Static Analysis",
                     name=f"ShellCheck warning in {s}",
-                    description=out.strip(),
+                    description=result.stdout.strip(),
                     reproducer=f"shellcheck -s bash {s}",
                     severity="LOW"
                 ))
@@ -67,7 +87,7 @@ def test_shellcheck(findings):
                 print(f"[+] Shellcheck clean: {s}")
 
 def check_runtime_config(env):
-    return run_cmd("/start.sh --check", env=env)
+    return run_cmd(["/start.sh", "--check"], env=env).require_execution()
 
 def test_render_vcl_ports(findings):
     print("--- Fuzzing render-vcl VARNISH_BACKEND_PORT boundaries ---")
@@ -90,11 +110,15 @@ def test_render_vcl_ports(findings):
         try:
             env = os.environ.copy()
             env["VARNISH_BACKEND_PORT"] = port
-            rc, out, err = run_cmd(f"/usr/local/bin/render-vcl {tmp.name}", env=env)
-            
+            result = run_cmd(["/usr/local/bin/render-vcl", tmp.name], env=env).require_execution()
+            rc, err = result.returncode, result.stderr
+            if rc != 0 and expect_error and "Invalid VARNISH_BACKEND_PORT" not in err:
+                raise RuntimeError(f"Port rejection could not be measured: {result}")
+
             if rc == 0:
-                check_rc, check_out, check_err = check_runtime_config(env)
-                compiler_output = (check_out + check_err).strip()
+                check = check_runtime_config(env)
+                check_rc = check.returncode
+                compiler_output = (check.stdout + check.stderr).strip()
                 if expect_error and check_rc != 0:
                     print(f"[BUG] render-vcl allowed invalid port '{port}' ({label}); config check failed: {compiler_output}")
                     findings.append(Finding(
@@ -149,17 +173,20 @@ def test_render_vcl_host_injections(findings):
         try:
             env = os.environ.copy()
             env["VARNISH_BACKEND_HOST"] = host
-            rc, out, err = run_cmd(f"/usr/local/bin/render-vcl {tmp.name}", env=env)
-            
+            result = run_cmd(["/usr/local/bin/render-vcl", tmp.name], env=env).require_execution()
+            rc = result.returncode
+            if rc != 0 and is_hostile and "Invalid VARNISH_BACKEND_HOST" not in result.stderr:
+                raise RuntimeError(f"Host rejection could not be measured: {result}")
+
             # Check what was rendered
             if os.path.exists(tmp.name):
                 with open(tmp.name, "r") as f:
                     content = f.read()
 
                 # Compile the complete runtime VCL using the backend values under test.
-                check_rc, check_out, check_err = check_runtime_config(env)
-                if check_rc != 0:
-                    print(f"[+] /start.sh --check rejected backend host '{host}' ({label}): {(check_out + check_err).strip()}")
+                check = check_runtime_config(env)
+                if check.returncode != 0:
+                    print(f"[+] /start.sh --check rejected backend host '{host}' ({label}): {(check.stdout + check.stderr).strip()}")
 
                 # Check for newline injection: does render-vcl prevent multi-line injection?
                 if "\n" in host and rc == 0:
@@ -179,8 +206,9 @@ def test_config_check_rejects_unresolvable_backend(findings):
     print("--- Checking runtime VCL compilation with an unresolvable backend ---")
     env = os.environ.copy()
     env["VARNISH_BACKEND_HOST"] = "nosuchhost"
-    rc, out, err = check_runtime_config(env)
-    output = out + err
+    result = check_runtime_config(env)
+    rc = result.returncode
+    output = result.stdout + result.stderr
 
     if rc == 0:
         findings.append(Finding(
@@ -223,8 +251,9 @@ def test_start_script_boundaries(findings):
         env = os.environ.copy()
         env.update(env_override)
         # Run start.sh with timeout
-        rc, out, err = run_cmd(f"{start_sh}", env=env, timeout=3)
-        
+        result = run_cmd([start_sh], env=env, timeout=3).require_execution()
+        rc, out, err = result.returncode, result.stdout, result.stderr
+
         # We expect validation failures to exit non-zero quickly with an ERROR message
         if "conflict" in label or "Nonexistent" in label:
             if rc == 0:
