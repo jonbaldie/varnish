@@ -761,7 +761,8 @@ test-campaign-report: build
 		-v "$$(pwd)/test/campaign:/campaign:ro" \
 		-v "$$(pwd)/test/e2e/fixtures:/fixtures:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
-		varnish-campaign:latest sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_campaign_report.py'
+		-e CAMPAIGN_DISPOSABLE_CONTAINER=1 \
+		varnish-campaign:latest sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_command_results.py; python3 /campaign/assert_campaign_report.py'
 
 .PHONY: test-campaign-origin-observation
 test-campaign-origin-observation: build
