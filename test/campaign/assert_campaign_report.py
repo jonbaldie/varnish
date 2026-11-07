@@ -162,8 +162,8 @@ def assert_transport_failure_mid_campaign_is_persisted():
                 pass
             time.sleep(0.001)
         print("OK: phase 1 result is persisted while the campaign runs")
-        # The campaign runtime's varnishd manager and child, killed outright:
-        # phase 2's next request meets a refused connection.
+        # Kill the campaign runtime's varnishd manager and child. Phase 2 may
+        # already have a request in flight when the processes are killed.
         subprocess.run(["pkill", "-KILL", "-x", "varnishd"], check=True)
         out, _ = proc.communicate(timeout=120)
     finally:
@@ -181,8 +181,9 @@ def assert_transport_failure_mid_campaign_is_persisted():
     phase2 = report["phase2_cgpt_properties"]
     check(phase2["status"] == "error", "phase 2 is marked error")
     tb = "\n".join(d.get("traceback", "") for d in phase2["diagnostics"])
-    check("ConnectionRefusedError" in tb or "ConnectionResetError" in tb
-          or "RemoteDisconnected" in tb, "phase 2 diagnostics keep the transport error traceback")
+    check("Traceback (most recent call last):" in tb and "RuntimeError:" in tb
+          and "http://127.0.0.1:80/" in tb,
+          "phase 2 diagnostics keep the failed Varnish request traceback")
     check(phase2["findings"] is not None, "phase 2 keeps findings collected before the error")
     for phase in PHASES[2:]:
         check(report[phase]["status"] == "not-run", f"{phase} is marked not-run")
