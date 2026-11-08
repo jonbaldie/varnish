@@ -143,7 +143,7 @@ Wait for this command to return before you start another Docker test or campaign
 
 ### Exploratory testing
 
-See the [runtime preflight and HTTP cache exploratory report](docs/exploratory-testing/2026-10-31-runtime-cache.md) for user journeys and captured responses.
+See the exploratory reports for [runtime preflight and HTTP cache](docs/exploratory-testing/2026-10-31-runtime-cache.md) and [language variants and mutation invalidation](docs/exploratory-testing/2026-11-08-http-cache.md).
 
 ### Campaign origin observations
 
