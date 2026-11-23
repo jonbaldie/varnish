@@ -1,9 +1,15 @@
 services:
   varnish:
     build: .
-    image: jonbaldie/varnish
+    image: ${VARNISH_IMAGE:-jonbaldie/varnish}
     ports:
-      - "80:80"
+      - "127.0.0.1:80:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 512
     environment:
       VARNISH_BACKEND_HOST: web
       VARNISH_BACKEND_PORT: "80"
@@ -20,4 +26,10 @@ services:
 
   web:
     image: nginx:alpine
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+          pids: 100
     restart: unless-stopped

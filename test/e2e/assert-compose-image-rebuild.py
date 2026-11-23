@@ -43,16 +43,16 @@ def main() -> None:
 
         compose_file = context / "docker-compose.yml"
         compose_text = compose_file.read_text()
-        if compose_text.count('image: jonbaldie/varnish') != 1:
+        if compose_text.count('image: ${VARNISH_IMAGE:-jonbaldie/varnish}') != 1:
             fail("sample Compose file no longer has one varnish image entry")
-        if compose_text.count('"80:80"') != 1:
-            fail("sample Compose file no longer has one published port entry")
+        if compose_text.count('"127.0.0.1:80:80"') != 1:
+            fail("sample Compose file no longer has one loopback published port entry")
         with socket.socket() as listener:
             listener.bind(("127.0.0.1", 0))
             host_port = listener.getsockname()[1]
         compose_file.write_text(
-            compose_text.replace("image: jonbaldie/varnish", f"image: {image}")
-            .replace('"80:80"', f'"127.0.0.1:{host_port}:80"')
+            compose_text.replace("image: ${VARNISH_IMAGE:-jonbaldie/varnish}", f"image: {image}")
+            .replace('"127.0.0.1:80:80"', f'"127.0.0.1:{host_port}:80"')
         )
 
         dockerfile = context / "Dockerfile"
@@ -107,7 +107,7 @@ def main() -> None:
             if cid:
                 output = command("docker", "compose", "-p", project, "exec", "-T", "varnish", "sha256sum", path)
             elif in_image:
-                output = command("docker", "run", "--rm", "--entrypoint", "sha256sum", image, path)
+                output = command("docker", "run", "--rm", "--cpus", "1", "--memory", "512m", "--pids-limit", "100", "--entrypoint", "sha256sum", image, path)
             else:
                 fail("file_hash requires a container or image")
             return output.split()[0]

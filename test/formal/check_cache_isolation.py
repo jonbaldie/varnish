@@ -16,8 +16,8 @@ from dataclasses import dataclass
 
 ROOT = Path(__file__).resolve().parents[2]
 POLICY = ROOT / "cache-policy.vcl"
-IMAGE = "varnish-cache-isolation:7.1.1"
-VARNISH_VERSION = "varnish-7.1.1 revision 7cee1c581bead20e88d101ab3d72afb29f14d87a"
+IMAGE = "varnish-cache-isolation:7.7.0"
+VARNISH_VERSION = "varnish-7.7.0 revision 71fc9d211c471106e4be590f3816a56ba156a833"
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ def prepare_image():
     if docker("image", "inspect", IMAGE, check=False).returncode:
         print(f"Building {IMAGE} from the repository Dockerfile (first run).", flush=True)
         subprocess.run(("docker", "build", "-t", IMAGE, str(ROOT)), check=True)
-    result = docker("run", "--rm", "--entrypoint", "varnishd", IMAGE, "-V")
+    result = docker("run", "--rm", "--cpus", "1", "--memory", "512m", "--pids-limit", "100", "--entrypoint", "varnishd", IMAGE, "-V")
     version = result.stdout + result.stderr
     if VARNISH_VERSION not in version:
         raise RuntimeError(
@@ -186,6 +186,7 @@ def main():
             )
             result = docker(
                 "run", "-d", "--name", name,
+                "--cpus", "1", "--memory", "512m", "--pids-limit", "512",
                 "--add-host=host.docker.internal:host-gateway",
                 "-p", "127.0.0.1::8080",
                 "-v", f"{POLICY}:/verification/cache-policy.vcl:ro",

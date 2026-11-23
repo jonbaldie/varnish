@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: test-hostile-locks build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-compose-fixture-lifecycle test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-hostile-deflate-encoding test-hostile-deflate-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign test-campaign-runtime-health test-campaign-report
+.PHONY: test-hostile-locks build test test-makefile-shell test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-integration test-host-header test-host-header-invalid test-security test-purge test-grace test-perf test-e2e-hard test-e2e-harness-module test-e2e-scenario-config test-compose-fixture-lifecycle test-hostile-static-cookie test-hostile-static-cookie-canary test-hostile-account-cookie-isolation test-hostile-set-cookie-isolation test-hostile-query-suffix test-hostile-query-suffix-canary test-hostile-accept-encoding test-hostile-accept-encoding-canary test-hostile-deflate-encoding test-hostile-deflate-encoding-canary test-5xx-not-cached test-purge-unauthorized test-post-not-cached test-hostile-post-canary test-grace-stale test-hostile-vary-star test-hostile-vary-star-canary test-hostile-authorization test-hostile-authorization-canary test-hostile-zero-ttl test-hostile-zero-ttl-canary test-hostile-invalid-expires-canary test-hostile-nonstatic-invalid-expires-canary test-hostile-surrogate-esi test-hostile-surrogate-esi-canary test-hostile-revalidate test-hostile-revalidate-canary test-hostile-unsafe-location test-compose-image-rebuild test-campaign test-campaign-runtime-health test-campaign-report test-varnish-version test-safe
 
 IMAGE := jonbaldie/varnish:latest
 CONTAINER_PREFIX := varnish-test
@@ -20,7 +20,7 @@ test-makefile-shell:
 	@set -euo pipefail; echo "OK: pipefail supported"
 	@echo "=== Test: Makefile shell compatibility PASSED ==="
 
-test: build test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-campaign-report test-campaign-origin-observation test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
+test: build test-varnish-version test-restart-docs test-existence test-vcl-compile test-smoke test-container-restart test-smoke-runtime-interface test-backend-config-adapter test-campaign-runtime-health test-campaign-report test-campaign-origin-observation test-e2e-harness-module test-compose-fixture-lifecycle test-integration test-host-header test-host-header-invalid test-security test-purge test-grace
 
 test-restart-docs:
 	@echo "=== Test: Restart documentation ==="
@@ -41,10 +41,18 @@ test-compose-image-rebuild:
 	@echo "=== Test: Compose image VCL rebuild and mounted cache policy ==="
 	@python3 ./test/e2e/assert-compose-image-rebuild.py
 
+test-safe:
+	@bash ./scripts/run-docker-gates.sh
+
+test-varnish-version:
+	@echo "=== Test: Varnish package versions (DSA-6584-1) ==="
+	@bash ./test/e2e/assert-varnish-version.sh $(IMAGE)
+	@echo "=== Test: Varnish package versions PASSED ==="
+
 test-existence:
 	@echo "=== Test: File existence ==="
 	@set -euo pipefail; \
-	cid=$$(docker create $(IMAGE)); \
+	cid=$$(docker create --cpus 1 --memory 512m --pids-limit 100 $(IMAGE)); \
 	tmpdir=$$(mktemp -d); \
 	trap "docker rm -f $$cid >/dev/null 2>&1; rm -rf $$tmpdir" EXIT; \
 	for f in /usr/sbin/varnishd /etc/varnish/default.vcl /etc/varnish/backend.vcl /etc/varnish/cache-policy.vcl /start.sh; do \
@@ -60,27 +68,27 @@ test-vcl-compile:
 	@echo "=== Test: VCL compilation ==="
 	@set -euo pipefail; \
 	name="$(CONTAINER_PREFIX)-emb-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name $(IMAGE) /start.sh --check >/dev/null; \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 100 $(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Embedded VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-emb-config-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 100 \
 		-e VARNISH_BACKEND_HOST=localhost \
 		-e VARNISH_BACKEND_PORT=9090 \
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
 		$(IMAGE) /start.sh --check; \
 	echo "OK: Embedded VCL compiles with configured backend output"; \
 	name="$(CONTAINER_PREFIX)-compose-config-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 100 --add-host web:127.0.0.1 \
 		-e VARNISH_BACKEND_HOST=web -e VARNISH_BACKEND_PORT=80 -e VARNISH_BACKEND_PROBE_PATH=/ \
 		$(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Compose backend adapter VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-hostile-config-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host hostile-backend:127.0.0.1 \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 100 --add-host hostile-backend:127.0.0.1 \
 		-e VARNISH_BACKEND_HOST=hostile-backend -e VARNISH_BACKEND_PORT=8080 -e VARNISH_BACKEND_PROBE_PATH=/ready \
 		$(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Hostile backend adapter VCL compiles"; \
 	name="$(CONTAINER_PREFIX)-repo-$$(openssl rand -hex 4)"; \
-	docker run --rm --name $$name --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) /start.sh --check >/dev/null; \
+	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 100 --add-host web:127.0.0.1 -v $$(pwd)/default.vcl:/etc/varnish/default.vcl:ro -v $$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro $(IMAGE) /start.sh --check >/dev/null; \
 	echo "OK: Repo VCL compiles"; \
 	echo "=== Test: VCL compilation PASSED ==="
 test-smoke:
@@ -88,7 +96,7 @@ test-smoke:
 	@set -euo pipefail; \
 		name="$(CONTAINER_PREFIX)-smoke-$$(openssl rand -hex 4)"; \
 		host_port=18080; \
-		docker run -d --name $$name -p $$host_port:80 $(IMAGE) >/dev/null; \
+		docker run -d --name $$name --cpus 1 --memory 2g --pids-limit 512 -p 127.0.0.1:$$host_port:80 $(IMAGE) >/dev/null; \
 		trap "docker rm -f $$name >/dev/null 2>&1" EXIT; \
 		echo "Waiting for varnishd to serve HTTP on $$host_port..."; \
 		timeout=30; \
@@ -116,7 +124,7 @@ test-container-restart:
 	@set -euo pipefail; \
 		name="$(CONTAINER_PREFIX)-restart-$$(openssl rand -hex 4)"; \
 		host_port=18083; \
-		docker run -d --name $$name -p $$host_port:80 $(IMAGE) >/dev/null; \
+		docker run -d --name $$name --cpus 1 --memory 2g --pids-limit 512 -p 127.0.0.1:$$host_port:80 $(IMAGE) >/dev/null; \
 		trap "docker rm -f $$name >/dev/null 2>&1" EXIT; \
 		for phase in initial restarted; do \
 			if [ "$$phase" = "restarted" ]; then \
@@ -151,9 +159,9 @@ test-smoke-runtime-interface:
 	host_port=18081; \
 		tmpdir=$$(mktemp -d); \
 		trap "docker rm -f $$name >/dev/null 2>&1; rm -rf $$tmpdir" EXIT; \
-		docker run -d --name $$name \
+		docker run -d --name $$name --cpus 1 --memory 2g --pids-limit 512 \
 			-e VARNISH_LISTEN=0.0.0.0:8080 \
-			-p $$host_port:8080 \
+			-p 127.0.0.1:$$host_port:8080 \
 			$(IMAGE) >/dev/null; \
 		echo "Waiting for overridden HTTP listener on $$host_port..."; \
 		timeout=30; \
@@ -177,7 +185,7 @@ test-smoke-runtime-interface:
 			override_name="$(CONTAINER_PREFIX)-start-override-$$(openssl rand -hex 4)"; \
 			trap 'docker rm -f "$$override_name" >/dev/null 2>&1 || true; rm -rf "$$tmpdir"' EXIT; \
 			if [ "$$binary" = "varnishd" ]; then override_port=18084; else override_port=18085; fi; \
-			docker run -d --name $$override_name -p 127.0.0.1:$$override_port:8080 \
+			docker run -d --name $$override_name --cpus 1 --memory 2g --pids-limit 512 -p 127.0.0.1:$$override_port:8080 \
 				-e "VARNISH_START=$$binary -F -f /etc/varnish/default.vcl -a 0.0.0.0:8080 -s malloc,64m" \
 				$(IMAGE) >/dev/null; \
 			echo "Waiting for VARNISH_START '$$binary' command on $$override_port..."; \
@@ -212,7 +220,7 @@ test-smoke-runtime-interface:
 			local expected_msg="$$3"; \
 			local log="$$tmpdir/$$(echo "$$var_name-$$var_val" | tr -c 'a-zA-Z0-9' '_').log"; \
 			set +e; \
-			docker run --rm -e "$$var_name=$$var_val" $(IMAGE) >"$$log" 2>&1 & \
+			docker run --rm --cpus 1 --memory 512m --pids-limit 100 -e "$$var_name=$$var_val" $(IMAGE) >"$$log" 2>&1 & \
 			local pid=$$!; \
 			for _ in 1 2 3 4 5; do \
 				if ! kill -0 $$pid >/dev/null 2>&1; then \
@@ -253,7 +261,7 @@ test-smoke-runtime-interface:
 			local output; \
 			local status; \
 			set +e; \
-			output=$$(docker run --rm -e 'VARNISH_START=echo hi' -e "$$setting" $(IMAGE) 2>&1); \
+			output=$$(docker run --rm --cpus 1 --memory 512m --pids-limit 100 -e 'VARNISH_START=echo hi' -e "$$setting" $(IMAGE) 2>&1); \
 			status=$$?; \
 			set -e; \
 			if [ $$status -ne 1 ] || ! printf '%s' "$$output" | grep -Fq "VARNISH_START cannot be combined"; then \
@@ -271,11 +279,11 @@ test-smoke-runtime-interface:
 		assert_start_conflict "VARNISH_BACKEND_PORT=8080"; \
 		assert_start_conflict "VARNISH_BACKEND_PROBE_PATH=/healthz"; \
 	name="$(CONTAINER_PREFIX)-backend-config-$$(openssl rand -hex 4)"; \
-	docker run -d --name $$name \
+	docker run -d --name $$name --cpus 1 --memory 2g --pids-limit 512 \
 		-e VARNISH_BACKEND_HOST=localhost \
 		-e VARNISH_BACKEND_PORT=9090 \
 		-e VARNISH_BACKEND_PROBE_PATH=/healthz \
-		-p 18082:80 \
+		-p 127.0.0.1:18082:80 \
 		$(IMAGE) >/dev/null; \
 	echo "Waiting for backend-configured container on 18082..."; \
 	timeout=30; \
@@ -339,7 +347,7 @@ test-host-header-invalid:
 test-security:
 	@echo "=== Test: Security (non-root user) ==="
 	@set -euo pipefail; \
-	user=$$(docker run --rm $(IMAGE) whoami); \
+	user=$$(docker run --rm --cpus 1 --memory 512m --pids-limit 100 $(IMAGE) whoami); \
 	if [ "$$user" != "varnish" ]; then \
 		echo "FAIL: Expected user 'varnish', got '$$user'"; \
 		exit 1; \
@@ -737,7 +745,7 @@ test-perf:
 test-campaign-runtime-health: build
 	@echo "=== Test: Campaign runtime-health interface ==="
 	@set -euo pipefail; \
-	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-health-$$(openssl rand -hex 4)"; \
 	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name \
@@ -754,7 +762,7 @@ test-campaign-runtime-health: build
 test-campaign-report: build
 	@echo "=== Test: Campaign phase execution and report boundary ==="
 	@set -euo pipefail; \
-	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-report-$$(openssl rand -hex 4)"; \
 	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name \
@@ -772,7 +780,7 @@ test-campaign-report: build
 test-campaign-origin-observation: build
 	@echo "=== Test: Request-correlated campaign origin observations ==="
 	@set -euo pipefail; \
-	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-origin-$$(openssl rand -hex 4)"; \
 	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 500 \
@@ -783,7 +791,7 @@ test-campaign-origin-observation: build
 test-campaign: build
 	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="
 	@set -euo pipefail; \
-	docker build -t varnish-campaign:latest test/campaign >/dev/null; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
 	docker run --rm \
 		--cpus 2 \
 		--memory 2g \

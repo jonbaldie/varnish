@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 LABEL maintainer="Jonathan Baldie <jon@jonbaldie.com>"
 
 ADD embedded-default.vcl embedded-default.vcl

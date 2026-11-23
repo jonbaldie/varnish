@@ -45,7 +45,7 @@ if [ -z "$peer_net" ]; then
 fi
 
 peer_status="$(
-  docker run --rm \
+  docker run --rm --cpus 1 --memory 512m --pids-limit 100 \
     --network "$peer_net" \
     alpine \
     sh -c "apk add -q curl && curl -s -o /dev/null -w '%{http_code}' --max-time 10 -X PURGE http://varnish/"
@@ -73,7 +73,7 @@ if [ -z "$net" ]; then
 fi
 
 status="$(
-  docker run --rm \
+  docker run --rm --cpus 1 --memory 512m --pids-limit 100 \
     --network "$net" \
     --ip 203.0.113.100 \
     alpine \

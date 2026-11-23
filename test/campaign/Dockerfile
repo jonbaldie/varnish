@@ -1,4 +1,5 @@
-FROM jonbaldie/varnish
+ARG VARNISH_IMAGE=jonbaldie/varnish:latest
+FROM ${VARNISH_IMAGE}
 
 USER root
 

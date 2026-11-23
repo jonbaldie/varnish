@@ -35,7 +35,7 @@ run_invocation() {
     local command="$2"
     shift 2
     containers+=("$name")
-    docker run -d --name "$name" "$@" --entrypoint /bin/bash "$image" \
+    docker run -d --name "$name" --cpus 1 --memory 512m --pids-limit 100 "$@" --entrypoint /bin/bash "$image" \
         -c "$command > /tmp/start.stdout 2> /tmp/start.stderr" >/dev/null
     wait_for_exit "$name"
     check_status="$(docker inspect -f '{{.State.ExitCode}}' "$name")"
@@ -53,7 +53,7 @@ run_start() {
     local name="$1"
     shift
     containers+=("$name")
-    docker run -d --name "$name" "$@" "$image" /start.sh >/dev/null
+    docker run -d --name "$name" --cpus 1 --memory 2g --pids-limit 512 "$@" "$image" /start.sh >/dev/null
 }
 
 assert_check_output() {
@@ -123,7 +123,9 @@ for listen in nohost.invalid:80 999.1.1.1:80; do
     for command in '/start.sh --check' '/start.sh'; do
         name="$(new_name)"
         run_invocation "$name" "$command" -e "VARNISH_LISTEN=$listen"
-        if [[ "$check_status" == 0 ]] || ! grep -Fq "Got no socket(s) for $listen" \
+        # Varnish 7.7 prefixes the listen argument (a0=nohost...); 7.1 did not.
+        if [[ "$check_status" == 0 ]] || ! grep -Fq "Got no socket(s) for" \
+            "$tmpdir/$name.stdout" "$tmpdir/$name.stderr" || ! grep -Fq "$listen" \
             "$tmpdir/$name.stdout" "$tmpdir/$name.stderr"; then
             echo "FAIL: $command should reject listen host $listen with resolution diagnostics"
             assert_check_output "$name"

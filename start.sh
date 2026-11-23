@@ -85,6 +85,15 @@ if [ -z "${storage_backend}" ] || [ -z "${storage_size}" ]; then
 	fail "Invalid VARNISH_STORAGE '${storage}'; expected backend,size"
 fi
 
+# varnishd -C no longer validates the stevedore in Varnish 7.7 (failure is
+# deferred to child launch as "Unknown stevedore method"). Validate the kind
+# here so /start.sh --check still fails fast as documented.
+storage_kind="${storage_backend##*=}"
+case "${storage_kind}" in
+	malloc|file|default) ;;
+	*) fail "Unknown storage method \"${storage_backend}\"" ;;
+esac
+
 extra_words=()
 if [ -n "${extra_args}" ]; then
 	read -r -a extra_words <<< "${extra_args}"
