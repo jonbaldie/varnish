@@ -9,6 +9,8 @@ ready_timeout=60
 curl_max_time=10
 available_scenarios=(static-cookie account-cookie set-cookie query-suffix accept-encoding 5xx post grace purge-acl vary-star authorization zero-ttl surrogate-esi-nostore revalidate host-header unsafe-location deflate-encoding)
 restore_services=()
+lock_owned=false
+lock_timeout="${HOSTILE_LOCK_TIMEOUT:-60}"
 
 usage() {
   echo "Usage: $0 <scenario>" >&2
@@ -152,8 +154,8 @@ cleanup() {
     rm -rf "$tmpdir"
   fi
 
-  if [ -n "${lockdir:-}" ]; then
-    rm -rf "$lockdir"
+  if [ "$lock_owned" = true ]; then
+    rmdir "$lockdir" || echo "FAIL: could not release lock $lockdir" >&2
   fi
 }
 
@@ -174,11 +176,30 @@ fi
 
 configure_scenario
 
-trap cleanup EXIT
+if [[ ! "$lock_timeout" =~ ^[0-9]+$ ]] || [ "${#lock_timeout}" -gt 5 ]; then
+  echo "Invalid HOSTILE_LOCK_TIMEOUT: expected seconds from 0 to 99999" >&2
+  exit 1
+fi
 
+trap cleanup EXIT
+interrupted=0
+trap 'interrupted=130' INT
+trap 'interrupted=143' TERM
+
+waited=0
 while ! mkdir "$lockdir" 2>/dev/null; do
-  sleep 1
+  if [ "$interrupted" -ne 0 ]; then exit "$interrupted"; fi
+  if [ "$waited" -ge "$((10#$lock_timeout))" ]; then
+    echo "FAIL: scenario $scenario timed out waiting for lock $lockdir after $waited seconds; inspect the lock and its owner before removing it" >&2
+    exit 1
+  fi
+  sleep 1 || true
+  waited=$((waited + 1))
 done
+lock_owned=true
+trap 'exit 130' INT
+trap 'exit 143' TERM
+if [ "$interrupted" -ne 0 ]; then exit "$interrupted"; fi
 
 tmpdir="$(mktemp -d)"
 
