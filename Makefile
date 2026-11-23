@@ -745,16 +745,17 @@ test-perf:
 test-campaign-runtime-health: build
 	@echo "=== Test: Campaign runtime-health interface ==="
 	@set -euo pipefail; \
-	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
+	campaign_img="varnish-campaign:$$(openssl rand -hex 4)"; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t $$campaign_img test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-health-$$(openssl rand -hex 4)"; \
-	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
+	trap "docker rm -f $$name >/dev/null 2>&1 || true; docker image rm -f $$campaign_img >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name \
 		--cpus 1 \
 		--memory 512m \
 		--pids-limit 500 \
 		-v "$$(pwd)/test/campaign:/campaign:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
-		varnish-campaign:latest python3 /campaign/assert_runtime_health.py
+		$$campaign_img python3 /campaign/assert_runtime_health.py
 
 # test-campaign-report: checks that every campaign phase returns a checked result
 # and that the orchestrator persists it as each phase finishes, including when a
@@ -762,9 +763,10 @@ test-campaign-runtime-health: build
 test-campaign-report: build
 	@echo "=== Test: Campaign phase execution and report boundary ==="
 	@set -euo pipefail; \
-	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
+	campaign_img="varnish-campaign:$$(openssl rand -hex 4)"; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t $$campaign_img test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-report-$$(openssl rand -hex 4)"; \
-	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
+	trap "docker rm -f $$name >/dev/null 2>&1 || true; docker image rm -f $$campaign_img >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name \
 		--cpus 2 \
 		--memory 2g \
@@ -774,24 +776,27 @@ test-campaign-report: build
 		-v "$$(pwd)/test/e2e/fixtures:/fixtures:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
 		-e CAMPAIGN_DISPOSABLE_CONTAINER=1 \
-		varnish-campaign:latest sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_command_results.py; python3 /campaign/assert_campaign_report.py'
+		$$campaign_img sh -ec 'python3 /campaign/assert_http_client.py; python3 /campaign/assert_command_results.py; python3 /campaign/assert_campaign_report.py'
 
 .PHONY: test-campaign-origin-observation
 test-campaign-origin-observation: build
 	@echo "=== Test: Request-correlated campaign origin observations ==="
 	@set -euo pipefail; \
-	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
+	campaign_img="varnish-campaign:$$(openssl rand -hex 4)"; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t $$campaign_img test/campaign >/dev/null; \
 	name="$(CONTAINER_PREFIX)-campaign-origin-$$(openssl rand -hex 4)"; \
-	trap "docker rm -f $$name >/dev/null 2>&1 || true" EXIT; \
+	trap "docker rm -f $$name >/dev/null 2>&1 || true; docker image rm -f $$campaign_img >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm --name $$name --cpus 1 --memory 512m --pids-limit 500 \
 		-v "$$(pwd)/test/campaign:/campaign:ro" \
 		-e PYTHONDONTWRITEBYTECODE=1 \
-		varnish-campaign:latest python3 /campaign/assert_origin_observation.py --varnish
+		$$campaign_img python3 /campaign/assert_origin_observation.py --varnish
 
 test-campaign: build
 	@echo "=== Test: Long and vigorous bug-finding campaign (resource-capped container) ==="
 	@set -euo pipefail; \
-	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t varnish-campaign:latest test/campaign >/dev/null; \
+	campaign_img="varnish-campaign:$$(openssl rand -hex 4)"; \
+	docker build --build-arg VARNISH_IMAGE=$(IMAGE) -t $$campaign_img test/campaign >/dev/null; \
+	trap "docker image rm -f $$campaign_img >/dev/null 2>&1 || true" EXIT; \
 	docker run --rm \
 		--cpus 2 \
 		--memory 2g \
@@ -799,4 +804,4 @@ test-campaign: build
 		--pids-limit 1000 \
 		-v "$$(pwd)/test/campaign:/campaign" \
 		-v "$$(pwd)/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro" \
-		varnish-campaign:latest
+		$$campaign_img
