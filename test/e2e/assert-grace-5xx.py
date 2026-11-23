@@ -33,10 +33,12 @@ def main():
     docker("network", "create", prefix)
     try:
         docker("run", "-d", "--name", origin, "--network", prefix,
+               "--cpus", "1", "--memory", "256m", "--pids-limit", "100",
                "-p", "127.0.0.1::8080", "-v",
                f"{ROOT}/test/e2e/fixtures/scriptable-origin.py:/origin.py:ro",
                "python:3.13-alpine", "python", "-u", "/origin.py")
         docker("run", "-d", "--name", cache, "--network", prefix,
+               "--cpus", "1", "--memory", "2g", "--pids-limit", "512",
                "-p", "127.0.0.1::80", "-e", f"VARNISH_BACKEND_HOST={origin}",
                "-e", "VARNISH_BACKEND_PORT=8080", "-e", "VARNISH_BACKEND_PROBE_PATH=/probe",
                "-v", f"{ROOT}/cache-policy.vcl:/etc/varnish/cache-policy.vcl:ro", image)

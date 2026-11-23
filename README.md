@@ -22,7 +22,7 @@ make
 
 | Debian Version | Varnish Version |
 |----------------|-----------------|
-| bookworm       | 7.1.1           |
+| trixie         | 7.7.0           |
 
 ## How It Works
 
@@ -140,6 +140,15 @@ COMPOSE_PARALLEL_LIMIT=1 make -j1 test test-e2e-hard
 ```
 
 Wait for this command to return before you start another Docker test or campaign. The test recipes use teardown traps to remove containers and Compose resources. Do not interrupt or overlap that teardown.
+
+For the safe full-gate method, use the disposable-tag runner:
+
+```bash
+make test-safe
+# equivalent to: bash ./scripts/run-docker-gates.sh
+```
+
+It builds a disposable `varnish-176-gates-$$:test` image, runs the same serial gates with that tag for both `IMAGE` and Compose `VARNISH_IMAGE`, and removes the image on exit. Every test container is capped (`--cpus`/`--memory`/`--pids-limit`; daemon Varnish `1 CPU / 2g / 512`, short-lived checks `512m / 100`) and every published test port binds to `127.0.0.1`. Compose services carry the same limits and loopback-only ports. The runner tees output to `${TMPDIR:-/tmp}/varnish-176-gates-$$.log` so failure diagnostics are preserved.
 
 ### Exploratory testing
 

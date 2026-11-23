@@ -25,7 +25,7 @@ if [ -z "$varnish_container" ]; then
   echo "FAIL: Could not find Varnish container"
   exit 1
 fi
-status="$(docker run --rm --network "container:$varnish_container" alpine sh -c 'apk add -q curl >/dev/null && curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X PURGE -H "Host: localhost" "$1"' sh "http://127.0.0.1$test_path")"
+status="$(docker run --rm --cpus 1 --memory 512m --pids-limit 100 --network "container:$varnish_container" alpine sh -c 'apk add -q curl >/dev/null && curl -s -o /dev/null -w "%{http_code}" --max-time 10 -X PURGE -H "Host: localhost" "$1"' sh "http://127.0.0.1$test_path")"
 if [ "$status" != "200" ]; then
   echo "FAIL: Expected PURGE HTTP 200, got $status"
   exit 1

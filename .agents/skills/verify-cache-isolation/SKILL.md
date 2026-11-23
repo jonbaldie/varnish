@@ -14,7 +14,7 @@ description: Check shared-cache isolation when changing cache-policy.vcl request
 1. Read the covered code and compare it to the last verified commit, including uncommitted changes:
 
    ```sh
-   git diff e706c481ee7fb3fde444785064f1427a2b0dcedd -- cache-policy.vcl
+   git diff 65ce172dec6cb8f29807a5c1991664530272eb69 -- cache-policy.vcl
    ```
 
    The coverage record below identifies the behavior to compare. Review any affected assumptions or URL classifications before interpreting the result.
@@ -24,7 +24,7 @@ description: Check shared-cache isolation when changing cache-policy.vcl request
    python3 test/formal/check_cache_isolation.py
    ```
 
-   It requires Python 3.10+, Docker with `host-gateway` support, and network access for the first image build. It builds `varnish-cache-isolation:7.1.1` from this repository's Dockerfile if absent, checks Varnish revision `7cee1c581bead20e88d101ab3d72afb29f14d87a`, mounts the current `cache-policy.vcl`, and starts a temporary Varnish container and HTTP origin. The container and origin are cleaned up after the run. If the Dockerfile or installed Varnish changes, rebuild with `docker build -t varnish-cache-isolation:7.1.1 .`; the version check must still pass.
+   It requires Python 3.10+, Docker with `host-gateway` support, and network access for the first image build. It builds `varnish-cache-isolation:7.7.0` from this repository's Dockerfile if absent, checks Varnish revision `71fc9d211c471106e4be590f3816a56ba156a833`, mounts the current `cache-policy.vcl`, and starts a temporary Varnish container and HTTP origin. The container and origin are cleaned up after the run. If the Dockerfile or installed Varnish changes, rebuild with `docker build -t varnish-cache-isolation:7.7.0 .`; the version check must still pass.
 3. A `PASS` means every case listed under Bounds completed. `FAIL` prints the URL and the actual request/response prefix that exposed a violation; compare it to `vcl_recv`, `vcl_backend_response`, and the origin headers to decide whether the policy is wrong or the check's stated assumptions no longer apply. `ERROR`, a Docker failure, or a missing pass means the check did not complete. Report real violations with their request sequence; do not weaken the property to obtain a pass.
 4. If intended code changes alter the property or its assumptions, update the checker and this record together. Confirm a broken scratch variant is detected, restore it, and rerun against the actual code. Move the sync commit to the new committed revision only after confirming the check describes that revision.
 
@@ -40,9 +40,9 @@ This is exhaustive only over those finite, sequential inputs. It does not establ
 
 ## Coverage record
 
-Last confirmed against commit `e706c481ee7fb3fde444785064f1427a2b0dcedd`:
+Last confirmed against commit `65ce172dec6cb8f29807a5c1991664530272eb69`:
 
-- `cache-policy.vcl`: `vcl_recv` method, Authorization, static-path classification, Cookie stripping, Cookie pass, and hash decisions; `vcl_backend_response` Authorization storage guard and subsequent cacheability decisions. The check also exercises the relevant Varnish 7.1.1 built-in cache behavior and `vcl_backend_fetch` forwarding. The Authorization storage guard is a second defense behind request pass: this check does not establish its independent effectiveness.
+- `cache-policy.vcl`: `vcl_recv` method, Authorization, static-path classification, Cookie stripping, Cookie pass, and hash decisions; `vcl_backend_response` Authorization storage guard and subsequent cacheability decisions. The check also exercises the relevant Varnish 7.7.0 built-in cache behavior and `vcl_backend_fetch` forwarding. The Authorization storage guard is a second defense behind request pass: this check does not establish its independent effectiveness.
 - `test/formal/check_cache_isolation.py`: finite input generation, origin identity, and the observable isolation oracle. Its bounds and assumptions above are part of the coverage contract.
 
 When covered code changes after the sync commit, inspect the diff even if the check passes: a finite runtime check cannot detect every semantic change. For changes that went unchecked, use `/maintain-formal-verification-skill` to bring this record and the checker back in step.

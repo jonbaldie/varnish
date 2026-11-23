@@ -2,6 +2,12 @@ services:
   hostile-backend:
     build:
       context: ./test/hostile-backend
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+          pids: 100
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/ready"]
@@ -12,9 +18,15 @@ services:
 
   varnish-hostile:
     build: .
-    image: jonbaldie/varnish
+    image: ${VARNISH_IMAGE:-jonbaldie/varnish}
     ports:
-      - "8081:80"
+      - "127.0.0.1:8081:80"
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 2G
+          pids: 512
     environment:
       VARNISH_BACKEND_HOST: hostile-backend
       VARNISH_BACKEND_PORT: "8080"

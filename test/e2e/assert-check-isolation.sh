@@ -4,7 +4,7 @@ image="${1:-jonbaldie/varnish:latest}"
 name="varnish-test-check-isolation-$(openssl rand -hex 4)"
 trap 'docker logs "$name" 2>&1 || true; docker rm -fv "$name" >/dev/null 2>&1 || true' EXIT
 # A real running instance must retain its configuration across checks and restart.
-docker run -d --name "$name" -p 127.0.0.1::80 "$image" >/dev/null
+docker run -d --name "$name" --cpus 1 --memory 2g --pids-limit 512 -p 127.0.0.1::80 "$image" >/dev/null
 port="$(docker port "$name" 80/tcp | cut -d: -f2)"
 wait_http() {
     for _ in {1..60}; do

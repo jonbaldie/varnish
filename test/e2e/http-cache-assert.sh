@@ -81,7 +81,7 @@ http_request() {
         host_header="$(printf '%s\n' "$url" | sed -E 's#^https?://([^/]+).*#\1#')"
         loopback_url="$(printf '%s\n' "$url" | sed -E 's#^https?://[^/]+#http://127.0.0.1#')"
 
-        docker run --rm \
+        docker run --rm --cpus 1 --memory 512m --pids-limit 100 \
             --network "container:$varnish_container" \
             --volume "${TEST_TMPDIR:?TEST_TMPDIR must be set}:/test-tmp" \
             python:3.13-alpine \
