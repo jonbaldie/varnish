@@ -131,10 +131,14 @@ class Handler(BaseHTTPRequestHandler):
         # Cacheable targets referenced by Location/Content-Location headers
         # returned from unsafe-method endpoints (RFC 9111 §4.4).
         if clean_path == "/dir/mutate" and self.command == "POST":
-            params = parse_qs(urlsplit(self.path).query)
+            params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             header = params.get("header", ["Location"])[0]
             reference = params.get("ref", ["item"])[0]
-            self.respond(201, "mutated\n", extra_headers={header: reference})
+            extra_headers = {header: reference}
+            # Optional paired extra headers let tests forge cache-policy working fields.
+            for name, value in zip(params.get("extra_header", []), params.get("extra_value", [])):
+                extra_headers[name] = value
+            self.respond(201, "mutated\n", extra_headers=extra_headers)
             return
 
         if clean_path in ("/dir/item", "/item", "/dir/", "/dir/a/"):
