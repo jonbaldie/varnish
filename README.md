@@ -120,6 +120,8 @@ HTTPS → Nginx:443 → Varnish:80 → Nginx:80 (internal) → Website
 HTTP  → Varnish:80 → Nginx:80 (internal) → Website
 ```
 
+The TLS proxy must overwrite `X-Forwarded-Proto` with `https` for HTTPS requests. Varnish uses it to resolve the default port in scheme-relative invalidation references; direct HTTP requests use HTTP when the header is absent.
+
 With Docker networking this is straightforward to set up and performs well.
 
 ## Development
@@ -204,7 +206,7 @@ The `nginx:alpine` compose backend covers the happy-path smoke tests. A separate
 2. Non-static request with `Cookie` is passed per-client — assert separate `X-Backend-Request-Id` values; bob must not see alice's response.
 3. Dynamic URL whose query value ends in a static extension (e.g. `?q=jquery.js`) is not treated as a static asset — cookies reach origin per-client with separate request ids, while a real static asset with a query string (`/static/app.css?v=2`) still strips cookies and caches.
 4. Response with `Set-Cookie` is never shared from cache — assert separate request ids and `Set-Cookie` values per client.
-5. A successful unsafe request whose response carries `Location` or `Content-Location` (RFC 9111 §4.4) invalidates the cached object for the referenced URI on the same host (relative or absolute reference), while a cross-host reference must not invalidate same-host cache entries. Relative paths resolve against the unsafe request's directory. Every resolved path (relative, slash-relative such as `/a/../item`, or absolute such as `http://host/a/../item`) has its literal dot segments removed (RFC 3986 §5.2.4), preserves the query verbatim, and discards the fragment. VCL bounds dot-segment reduction to eight passes; unusually deep same-host references still requiring reduction conservatively invalidate the same host's cache instead of leaving stale data, while deep cross-host references invalidate nothing. Scheme-relative (`//host/path`) references remain unsupported.
+5. A successful unsafe request whose response carries `Location` or `Content-Location` (RFC 9111 §4.4) invalidates the cached object for the referenced URI on the same host (relative or absolute reference), while a cross-host reference must not invalidate same-host cache entries. Relative paths resolve against the unsafe request's directory. Every resolved path (relative, slash-relative such as `/a/../item`, or absolute such as `http://host/a/../item`) has its literal dot segments removed (RFC 3986 §5.2.4), preserves the query verbatim, and discards the fragment. VCL bounds dot-segment reduction to eight passes; unusually deep same-host references still requiring reduction conservatively invalidate the same host's cache instead of leaving stale data, while deep cross-host references invalidate nothing. Scheme-relative (`//host/path`) references inherit the request scheme (using `X-Forwarded-Proto` behind a TLS proxy) and follow the same resolution rules.
 
 Out of scope: additional routes, extra Cache-Control permutations, replacing the nginx smoke backend.
 

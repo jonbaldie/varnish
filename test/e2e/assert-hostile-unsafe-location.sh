@@ -230,6 +230,10 @@ run_relative_path_cases() {
     http_request relative-unrelated-first "${base_url}/location-target?case=${case_id}-unrelated"
     unrelated_id="$(assert_origin_request_id_present relative-unrelated-first 'unrelated target')"
     for header in Location Content-Location; do
+        run_relative_path_case "$header" "//localhost:8091/dir/item" /dir/item
+        run_relative_path_case "$header" "//LOCALHOST:8091/a/../dir/item?next=/../literal#fragment" '/dir/item?next=/../literal'
+        run_relative_path_noop_case "$header" "//other.example.test:8091/a/../dir/item" /dir/item
+        run_relative_path_case "$header" "//localhost:8091?network=1#fragment" '/?network=1'
         for reference in item ./item ../dir/item a/../item ./a/../../dir/item; do
             run_relative_path_case "$header" "$reference" /dir/item
         done
@@ -306,6 +310,42 @@ run_referenced_invalidation_case \
     "Content-Location" \
     "/content-location-target?case=${case_id}-mkcol-content-location" \
     200
+
+echo "Testing HTTPS request default port..."
+for header in Location Content-Location; do
+    prefix="network-https-request-port-${header}"
+    target="/dir/item?case=${case_id}-${header}-https-port"
+    http_request "${prefix}-first" "${base_url}${target}" -H 'Host: localhost:0443' -H 'X-Forwarded-Proto: https'
+    first_id="$(assert_origin_request_id_present "${prefix}-first" 'HTTPS explicit-port target')"
+    http_request "${prefix}-second" "${base_url}${target}" -H 'Host: localhost:0443' -H 'X-Forwarded-Proto: https'
+    assert_cache_state "${prefix}-second" HIT 'primed HTTPS explicit-port target'
+    ref="//localhost${target}"
+    encoded_ref="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$ref")"
+    http_request "${prefix}-mutation" "${base_url}/dir/mutate?header=${header}&ref=${encoded_ref}" -X POST -H 'Host: localhost:0443' -H 'X-Forwarded-Proto: https'
+    assert_http_status "${prefix}-mutation" 201 'HTTPS explicit-port mutation'
+    assert_header_contains "${prefix}-mutation" "$header" "$ref" 'HTTPS explicit-port mutation'
+    http_request "${prefix}-after" "${base_url}${target}" -H 'Host: localhost:0443' -H 'X-Forwarded-Proto: https'
+    assert_cache_state "${prefix}-after" MISS 'HTTPS explicit-port target after mutation'
+    assert_different_origin_request_id "${prefix}-after" "$first_id" 'HTTPS explicit-port target after mutation'
+done
+
+echo "Testing HTTPS network-path default port..."
+for header in Location Content-Location; do
+    prefix="network-https-${header}"
+    target="/dir/item?case=${case_id}-${header}-https"
+    http_request "${prefix}-first" "${base_url}${target}" -H 'Host: localhost' -H 'X-Forwarded-Proto: https'
+    first_id="$(assert_origin_request_id_present "${prefix}-first" 'HTTPS target')"
+    http_request "${prefix}-second" "${base_url}${target}" -H 'Host: localhost' -H 'X-Forwarded-Proto: https'
+    assert_cache_state "${prefix}-second" HIT 'primed HTTPS target'
+    ref="//localhost:0443${target}"
+    encoded_ref="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$ref")"
+    http_request "${prefix}-mutation" "${base_url}/dir/mutate?header=${header}&ref=${encoded_ref}" -X POST -H 'Host: localhost' -H 'X-Forwarded-Proto: https'
+    assert_http_status "${prefix}-mutation" 201 'HTTPS mutation'
+    assert_header_contains "${prefix}-mutation" "$header" "$ref" 'HTTPS mutation'
+    http_request "${prefix}-after" "${base_url}${target}" -H 'Host: localhost' -H 'X-Forwarded-Proto: https'
+    assert_cache_state "${prefix}-after" MISS 'HTTPS target after mutation'
+    assert_different_origin_request_id "${prefix}-after" "$first_id" 'HTTPS target after mutation'
+done
 
 echo "Testing relative-path references against the unsafe request directory..."
 run_relative_path_cases
@@ -443,6 +483,24 @@ run_referenced_invalidation_case \
     "Location" \
     "http://localhost:8091/location-target?case=${case_id}-abs" \
     201
+
+echo "Testing network-path default-port normalization..."
+for header in Location Content-Location; do
+    prefix="network-default-${header}"
+    target="/dir/item?case=${case_id}-${header}"
+    http_request "${prefix}-first" "${base_url}${target}" -H 'Host: localhost'
+    first_id="$(assert_origin_request_id_present "${prefix}-first" 'network default-port target')"
+    http_request "${prefix}-second" "${base_url}${target}" -H 'Host: localhost'
+    assert_cache_state "${prefix}-second" HIT 'primed network default-port target'
+    ref="//LOCALHOST:080${target}"
+    encoded_ref="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$ref")"
+    http_request "${prefix}-mutation" "${base_url}/dir/mutate?header=${header}&ref=${encoded_ref}" -X POST -H 'Host: localhost'
+    assert_http_status "${prefix}-mutation" 201 'network default-port mutation'
+    assert_header_contains "${prefix}-mutation" "$header" "$ref" 'network default-port mutation'
+    http_request "${prefix}-after" "${base_url}${target}" -H 'Host: localhost'
+    assert_cache_state "${prefix}-after" MISS 'network default-port target after mutation'
+    assert_different_origin_request_id "${prefix}-after" "$first_id" 'network default-port target after mutation'
+done
 
 echo "Testing default-port variant Location invalidation..."
 run_variant_port_invalidation_case \

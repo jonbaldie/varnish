@@ -22,11 +22,14 @@ sub vcl_recv {
         set req.http.host = req.http.host.lower();
     }
 
-    # The HTTP default port is equivalent to an omitted port (RFC 9110
-    # sections 4.2.3 and 7.2). Treat zero-padded and empty port spellings the
-    # same way before cache lookup and mutation invalidation.
+    # Normalize the default port for the request scheme before cache lookup
+    # and invalidation. A TLS proxy supplies X-Forwarded-Proto.
     if (req.http.host) {
-        set req.http.host = regsub(req.http.host, ":0*80$", "");
+        if (req.http.X-Forwarded-Proto ~ "(?i)^https$") {
+            set req.http.host = regsub(req.http.host, ":0*443$", "");
+        } else {
+            set req.http.host = regsub(req.http.host, ":0*80$", "");
+        }
         set req.http.host = regsub(req.http.host, ":$", "");
     }
 
@@ -120,8 +123,8 @@ sub reduce_reference_path {
 # referenced in its Location or Content-Location header. The reference is
 # passed in beresp.http.X-Varnish-Cache-Ref and resolved against the cache
 # identity (host + URL) used by the ban above. Multi-valued fields (Varnish
-# joins repeats with ", ") and scheme-relative ("//host/path") references
-# remain excluded. Relative paths use the unsafe request URL as their base;
+# joins repeats with ", ") remain excluded. Relative paths use the unsafe
+# request URL as their base;
 # every resolved path then has its dot segments removed (RFC 3986 §5.2.4).
 sub invalidate_reference {
     # Working fields are ours alone: never trust origin-supplied copies.
@@ -129,16 +132,18 @@ sub invalidate_reference {
     unset beresp.http.X-Varnish-Cache-Ref-URL;
     unset beresp.http.X-Varnish-Cache-Ref-Path;
     unset beresp.http.X-Varnish-Cache-Ref-Query;
-    if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
-        # Absolute reference: the authority is the cache host identity
+    if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^(https?:)?//[^/?#]+") {
+        # Absolute or network-path reference: the authority is the cache host identity
         # (including empty and zero-padded spellings), and the path with
         # query, minus any fragment, becomes the cache URL identity once
         # the shared stage below removes its dot segments.
         set beresp.http.X-Varnish-Cache-Ref-Host =
-            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://", "");
+            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^(https?:)?//", "");
         set beresp.http.X-Varnish-Cache-Ref-Host =
             regsub(beresp.http.X-Varnish-Cache-Ref-Host, "[/?#].*$", "");
-        if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https://") {
+        if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https://" ||
+            (beresp.http.X-Varnish-Cache-Ref ~ "^//" &&
+             bereq.http.X-Forwarded-Proto ~ "(?i)^https$")) {
             set beresp.http.X-Varnish-Cache-Ref-Host =
                 regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":0*443$", "");
             set beresp.http.X-Varnish-Cache-Ref-Host =
@@ -150,7 +155,7 @@ sub invalidate_reference {
                 regsub(beresp.http.X-Varnish-Cache-Ref-Host, ":$", "");
         }
         set beresp.http.X-Varnish-Cache-Ref-URL =
-            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://[^/?#]+", "");
+            regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^(https?:)?//[^/?#]+", "");
         set beresp.http.X-Varnish-Cache-Ref-URL =
             regsub(beresp.http.X-Varnish-Cache-Ref-URL, "#.*$", "");
         # An authority-only reference has an empty path; an empty-path
@@ -189,7 +194,7 @@ sub invalidate_reference {
 
     # RFC 9111 §4.4 names the referenced URI, which RFC 3986 §5.2.4 defines
     # after dot-segment removal. Every resolved reference (absolute,
-    # slash-relative or relative) is reduced here before it can be banned.
+    # network-path, slash-relative or relative) is reduced here before it can be banned.
     if (beresp.http.X-Varnish-Cache-Ref-Host) {
         set beresp.http.X-Varnish-Cache-Ref-Path =
             regsub(beresp.http.X-Varnish-Cache-Ref-URL, "[?].*$", "");
