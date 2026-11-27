@@ -312,7 +312,7 @@ run_relative_path_cases
 
 echo "Testing origin-forged reference working fields are ignored..."
 forged_target="/dir/item"
-http_request forged-first "${base_url}${forged_target}" -X PURGE
+http_request forged-purge "${base_url}${forged_target}" -X PURGE
 http_request forged-first "${base_url}${forged_target}"
 forged_id="$(assert_origin_request_id_present forged-first 'forged-field target')"
 http_request forged-second "${base_url}${forged_target}"

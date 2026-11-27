@@ -131,7 +131,7 @@ class Handler(BaseHTTPRequestHandler):
         # Cacheable targets referenced by Location/Content-Location headers
         # returned from unsafe-method endpoints (RFC 9111 §4.4).
         if clean_path == "/dir/mutate" and self.command == "POST":
-            params = parse_qs(urlsplit(self.path).query)
+            params = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
             header = params.get("header", ["Location"])[0]
             reference = params.get("ref", ["item"])[0]
             extra_headers = {header: reference}
