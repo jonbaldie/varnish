@@ -739,6 +739,23 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        quoted_surrogate_cases = {
+            "/surrogate-quoted-positive": ('content="x, max-age=3600"', "private, no-store"),
+            "/surrogate-quoted-semicolon": ('content="x; max-age=3600"', "private, no-store"),
+            "/surrogate-quoted-space": ('content="x max-age=3600"', "private, no-store"),
+            "/surrogate-quoted-escape": (r'content="x\", max-age=3600"', "private, no-store"),
+            "/surrogate-quoted-real-zero": ('max-age=0, content="x, max-age=3600"', "public, max-age=3600"),
+            "/surrogate-quoted-real-positive": ('max-age=60, content="x, max-age=0"', "private, no-store"),
+            "/surrogate-quoted-before-positive": ('content="x, max-age=0", max-age=60', "private, no-store"),
+        }
+        if clean_path in quoted_surrogate_cases:
+            surrogate, cache_control = quoted_surrogate_cases[clean_path]
+            self.respond(200, f"route={clean_path}\n", extra_headers={
+                "Cache-Control": cache_control,
+                "Surrogate-Control": surrogate,
+            })
+            return
+
         # Genuine surrogate freshness grant: Surrogate-Control with max-age
         # overrides Cache-Control for the shared cache by design.
         if clean_path == "/surrogate-fresh":
