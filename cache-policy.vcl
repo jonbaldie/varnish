@@ -124,10 +124,16 @@ sub reduce_reference_path {
 # remain excluded. Relative paths use the unsafe request URL as their base;
 # every resolved path then has its dot segments removed (RFC 3986 §5.2.4).
 sub invalidate_reference {
+    # Working fields are ours alone: never trust origin-supplied copies.
+    unset beresp.http.X-Varnish-Cache-Ref-Host;
+    unset beresp.http.X-Varnish-Cache-Ref-URL;
+    unset beresp.http.X-Varnish-Cache-Ref-Path;
+    unset beresp.http.X-Varnish-Cache-Ref-Query;
     if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
         # Absolute reference: the authority is the cache host identity
         # (including empty and zero-padded spellings), and the path with
-        # query, minus any fragment, is the cache URL identity.
+        # query, minus any fragment, becomes the cache URL identity once
+        # the shared stage below removes its dot segments.
         set beresp.http.X-Varnish-Cache-Ref-Host =
             regsub(beresp.http.X-Varnish-Cache-Ref, "(?i)^https?://", "");
         set beresp.http.X-Varnish-Cache-Ref-Host =

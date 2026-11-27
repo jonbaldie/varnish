@@ -263,6 +263,7 @@ run_relative_path_cases() {
         run_relative_path_case "$header" "$reference" /dir/item
         run_relative_path_case "$header" "/${reference}" /item
         run_relative_path_case "$header" "http://localhost:8091/${reference}" /item
+        run_relative_path_case "$header" "http://LocalHost:8091/${reference}" /item
     done
 
     # Deep cross-host navigation must not fall back to banning this host.
@@ -308,6 +309,26 @@ run_referenced_invalidation_case \
 
 echo "Testing relative-path references against the unsafe request directory..."
 run_relative_path_cases
+
+echo "Testing origin-forged reference working fields are ignored..."
+forged_target="/dir/item"
+http_request forged-first "${base_url}${forged_target}" -X PURGE
+http_request forged-first "${base_url}${forged_target}"
+forged_id="$(assert_origin_request_id_present forged-first 'forged-field target')"
+http_request forged-second "${base_url}${forged_target}"
+assert_cache_state forged-second HIT 'second GET of forged-field target'
+# mailto: matches no reference branch; only forged working fields could ban.
+http_request forged-mutation \
+    "${base_url}/dir/mutate?header=Location&ref=mailto%3Ax&extra_header=X-Varnish-Cache-Ref-Host&extra_value=localhost%3A8091&extra_header=X-Varnish-Cache-Ref-URL&extra_value=%2Fdir%2Fitem" \
+    -X POST
+assert_http_status forged-mutation 201 'POST with forged X-Varnish-Cache-Ref-* fields'
+assert_header_absent forged-mutation X-Varnish-Cache-Ref-Host 'forged-field mutation'
+assert_header_absent forged-mutation X-Varnish-Cache-Ref-URL 'forged-field mutation'
+http_request forged-after "${base_url}${forged_target}"
+assert_cache_state forged-after HIT 'forged-field target after forged mutations'
+assert_same_origin_request_id forged-after "$forged_id" 'forged-field target after forged mutations'
+http_request forged-cleanup "${base_url}${forged_target}" -X PURGE
+echo "OK: origin-forged X-Varnish-Cache-Ref-* fields did not invalidate ${forged_target}"
 
 echo "Testing safe methods and error responses do not invalidate the target..."
 for method in GET HEAD OPTIONS TRACE; do
