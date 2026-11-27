@@ -203,6 +203,27 @@ run_relative_path_case() {
     relative_case=$((relative_case + 1))
 }
 
+# A successful unsafe response whose reference must not invalidate the target.
+run_relative_path_noop_case() {
+    local header="$1" reference="$2" target="$3" prefix encoded_reference first_id
+    prefix="relative-noop-${header}-${relative_case}"
+    encoded_reference="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$reference")"
+    http_request "${prefix}-first" "${base_url}${target}"
+    first_id="$(assert_origin_request_id_present "${prefix}-first" "first GET of ${prefix} target")"
+    http_request "${prefix}-second" "${base_url}${target}"
+    assert_cache_state "${prefix}-second" HIT "second GET of ${prefix} target"
+    http_request "${prefix}-mutation" \
+        "${base_url}/dir/mutate?header=${header}&ref=${encoded_reference}" -X POST
+    assert_http_status "${prefix}-mutation" 201 "POST ${prefix} mutation"
+    assert_header_contains "${prefix}-mutation" "$header" "$reference" "POST ${prefix} mutation"
+    http_request "${prefix}-after" "${base_url}${target}"
+    assert_cache_state "${prefix}-after" HIT "GET ${prefix} target after POST"
+    assert_same_origin_request_id "${prefix}-after" "$first_id" "GET ${prefix} target after POST"
+    echo "OK: ${header} ${reference} did not invalidate ${target}"
+    http_request relative-noop-cleanup "${base_url}${target}" -X PURGE
+    relative_case=$((relative_case + 1))
+}
+
 run_relative_path_cases() {
     local header reference unrelated_id relative_case=0
     # An unrelated object must survive ordinary same-host path resolution.
@@ -219,6 +240,18 @@ run_relative_path_cases() {
         run_relative_path_case "$header" 'item#fragment' /dir/item
         run_relative_path_case "$header" '/dir/item' /dir/item
         run_relative_path_case "$header" 'http://localhost:8091/dir/item' /dir/item
+        # RFC 3986 §5.2.4 also applies to absolute and slash-relative paths.
+        run_relative_path_case "$header" '/a/../dir/item' /dir/item
+        run_relative_path_case "$header" '/a/b/../../dir/item' /dir/item
+        run_relative_path_case "$header" '/dir/./item' /dir/item
+        run_relative_path_case "$header" 'http://localhost:8091/a/../dir/item' /dir/item
+        run_relative_path_case "$header" 'http://LOCALHOST:8091/a/b/../../dir/./item#f' /dir/item
+        # Query dots are data, not navigation: exact ban, no host fallback.
+        run_relative_path_case "$header" '/dir/item?next=/../literal' '/dir/item?next=/../literal'
+        run_relative_path_case "$header" 'http://localhost:8091/dir/item?next=/./literal#f' \
+            '/dir/item?next=/./literal'
+        # A resolved cross-host reference has no authority here.
+        run_relative_path_noop_case "$header" 'http://other.example.test:9999/a/../dir/item' /dir/item
     done
     http_request relative-unrelated-after "${base_url}/location-target?case=${case_id}-unrelated"
     assert_cache_state relative-unrelated-after HIT 'unrelated target after relative mutations'
@@ -228,7 +261,20 @@ run_relative_path_cases() {
     reference="$(printf 'a/%.0s' {1..12})$(printf '../%.0s' {1..12})item"
     for header in Location Content-Location; do
         run_relative_path_case "$header" "$reference" /dir/item
+        run_relative_path_case "$header" "/${reference}" /item
+        run_relative_path_case "$header" "http://localhost:8091/${reference}" /item
     done
+
+    # Deep cross-host navigation must not fall back to banning this host.
+    http_request relative-deep-cross-unrelated-first "${base_url}/location-target?case=${case_id}-deep-cross"
+    unrelated_id="$(assert_origin_request_id_present relative-deep-cross-unrelated-first 'deep cross-host unrelated target')"
+    for header in Location Content-Location; do
+        run_relative_path_noop_case "$header" "http://other.example.test:9999/${reference}" /item
+    done
+    http_request relative-deep-cross-unrelated-after "${base_url}/location-target?case=${case_id}-deep-cross"
+    assert_cache_state relative-deep-cross-unrelated-after HIT 'unrelated target after deep cross-host references'
+    assert_same_origin_request_id relative-deep-cross-unrelated-after "$unrelated_id" \
+        'unrelated target after deep cross-host references'
 }
 
 case_id="$(openssl rand -hex 4)"

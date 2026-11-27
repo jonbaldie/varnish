@@ -121,7 +121,8 @@ sub reduce_reference_path {
 # passed in beresp.http.X-Varnish-Cache-Ref and resolved against the cache
 # identity (host + URL) used by the ban above. Multi-valued fields (Varnish
 # joins repeats with ", ") and scheme-relative ("//host/path") references
-# remain excluded. Relative paths use the unsafe request URL as their base.
+# remain excluded. Relative paths use the unsafe request URL as their base;
+# every resolved path then has its dot segments removed (RFC 3986 §5.2.4).
 sub invalidate_reference {
     if (beresp.http.X-Varnish-Cache-Ref ~ "(?i)^https?://[^/?#]+") {
         # Absolute reference: the authority is the cache host identity
@@ -178,6 +179,12 @@ sub invalidate_reference {
                 regsub(regsub(bereq.url, "[?].*$", ""), "[^/]*$", "") +
                 beresp.http.X-Varnish-Cache-Ref-URL;
         }
+    }
+
+    # RFC 9111 §4.4 names the referenced URI, which RFC 3986 §5.2.4 defines
+    # after dot-segment removal. Every resolved reference (absolute,
+    # slash-relative or relative) is reduced here before it can be banned.
+    if (beresp.http.X-Varnish-Cache-Ref-Host) {
         set beresp.http.X-Varnish-Cache-Ref-Path =
             regsub(beresp.http.X-Varnish-Cache-Ref-URL, "[?].*$", "");
         set beresp.http.X-Varnish-Cache-Ref-Query =
@@ -193,7 +200,10 @@ sub invalidate_reference {
         call reduce_reference_path;
         call reduce_reference_path;
         if (beresp.http.X-Varnish-Cache-Ref-Path ~ "/[.][.]?(/|$)") {
-            ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host);
+            # Never fall back to banning this host for another host's URI.
+            if (beresp.http.X-Varnish-Cache-Ref-Host == bereq.http.host) {
+                ban("obj.http.X-Varnish-Cache-Host == " + bereq.http.host);
+            }
             unset beresp.http.X-Varnish-Cache-Ref-Host;
         }
         set beresp.http.X-Varnish-Cache-Ref-URL =
