@@ -285,6 +285,32 @@ run_relative_path_cases() {
 case_id="$(openssl rand -hex 4)"
 tab="$(printf '\t')"
 
+echo "Testing successful unsafe-method target invalidation beyond the common verbs..."
+run_target_invalidation_case \
+    mkcol-target \
+    MKCOL \
+    "/location-target?case=${case_id}-mkcol-target" \
+    200 \
+    MISS
+
+echo "Testing MKCOL Location and Content-Location reference invalidation..."
+run_referenced_invalidation_case \
+    mkcol-location \
+    MKCOL \
+    "/create-rel?case=${case_id}-mkcol-location" \
+    "/location-target?case=${case_id}-mkcol-location" \
+    "Location" \
+    "/location-target?case=${case_id}-mkcol-location" \
+    201
+run_referenced_invalidation_case \
+    mkcol-content-location \
+    MKCOL \
+    "/create-content-location?case=${case_id}-mkcol-content-location" \
+    "/content-location-target?case=${case_id}-mkcol-content-location" \
+    "Content-Location" \
+    "/content-location-target?case=${case_id}-mkcol-content-location" \
+    200
+
 echo "Testing HTTPS request default port..."
 for header in Location Content-Location; do
     prefix="network-https-request-port-${header}"
@@ -320,32 +346,6 @@ for header in Location Content-Location; do
     assert_cache_state "${prefix}-after" MISS 'HTTPS target after mutation'
     assert_different_origin_request_id "${prefix}-after" "$first_id" 'HTTPS target after mutation'
 done
-
-echo "Testing successful unsafe-method target invalidation beyond the common verbs..."
-run_target_invalidation_case \
-    mkcol-target \
-    MKCOL \
-    "/location-target?case=${case_id}-mkcol-target" \
-    200 \
-    MISS
-
-echo "Testing MKCOL Location and Content-Location reference invalidation..."
-run_referenced_invalidation_case \
-    mkcol-location \
-    MKCOL \
-    "/create-rel?case=${case_id}-mkcol-location" \
-    "/location-target?case=${case_id}-mkcol-location" \
-    "Location" \
-    "/location-target?case=${case_id}-mkcol-location" \
-    201
-run_referenced_invalidation_case \
-    mkcol-content-location \
-    MKCOL \
-    "/create-content-location?case=${case_id}-mkcol-content-location" \
-    "/content-location-target?case=${case_id}-mkcol-content-location" \
-    "Content-Location" \
-    "/content-location-target?case=${case_id}-mkcol-content-location" \
-    200
 
 echo "Testing relative-path references against the unsafe request directory..."
 run_relative_path_cases
