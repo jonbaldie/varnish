@@ -301,10 +301,14 @@ sub vcl_backend_response {
     # Cache-Control. Other values — including the ESI capability advertisement
     # content="ESI/1.0" or OFF — leave Cache-Control no-cache/no-store/private
     # directives in force.
+    # Work on a backend-request scratch header, never the origin header. Remove
+    # quoted values (including quoted-pair escapes) before looking for max-age.
+    set bereq.http.X-Surrogate-Directives = regsuball(beresp.http.Surrogate-Control,
+        {""(?:\\.|[^"\\])*(?:"|$)"}, "@");
     if (beresp.http.Set-Cookie ||
         beresp.http.Surrogate-Control ~ "(?i:no-store|no-cache)" ||
-        beresp.http.Surrogate-Control ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0+(?:\+[0-9]+)?(?:\s*[,;\s]|$)" ||
-        (beresp.http.Surrogate-Control !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
+        bereq.http.X-Surrogate-Directives ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0+(?:\+[0-9]+)?(?:\s*[,;\s]|$)" ||
+        (bereq.http.X-Surrogate-Directives !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
           beresp.http.Cache-Control ~ "(?i:no-cache|no-store|private)")) {
         set beresp.uncacheable = true;
         set beresp.ttl = 120s;
@@ -315,14 +319,14 @@ sub vcl_backend_response {
     # Expires, and the static-asset TTL policy (W3C Edge Architecture §4.2).
     # The optional +N freshness extension is an explicit stale-serving window;
     # without it, stale objects must be refetched immediately.
-    if (beresp.http.Surrogate-Control ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*") {
+    if (bereq.http.X-Surrogate-Directives ~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*") {
         set beresp.ttl = std.duration(
-            regsub(beresp.http.Surrogate-Control,
+            regsub(bereq.http.X-Surrogate-Directives,
                 "(?i).*(?:^|[,;\s])\s*max-age\s*=\s*([0-9]+)(?:\+([0-9]+))?.*",
                 "\1s"),
             0s);
         set beresp.grace = std.duration(
-            regsub(beresp.http.Surrogate-Control,
+            regsub(bereq.http.X-Surrogate-Directives,
                 "(?i).*(?:^|[,;\s])\s*max-age\s*=\s*([0-9]+)(?:\+([0-9]+))?.*",
                 "0\2s"),
             0s);
@@ -376,7 +380,7 @@ sub vcl_backend_response {
     # Surrogate-Control max-age supersedes Cache-Control for this surrogate.
     # Setting grace=0 forces synchronous revalidation and returns 503 if the
     # origin is unavailable.
-    if (beresp.http.Surrogate-Control !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
+    if (bereq.http.X-Surrogate-Directives !~ "(?i)(?:^|[,;\s])\s*max-age\s*=\s*0*[1-9][0-9]*" &&
         beresp.http.Cache-Control ~ "(?i)(?:^|[,;\s])\s*(?:(?:must-revalidate|proxy-revalidate)(?:$|[,;\s])|s-maxage\s*=)") {
         set beresp.grace = 0s;
     }

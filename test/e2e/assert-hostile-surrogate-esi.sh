@@ -63,6 +63,24 @@ assert_cache_state private-esi-3 MISS "private-esi third request"
 assert_different_origin_request_id private-esi-3 "$first_id" "private-esi third request"
 echo "OK: /private-esi third request also went to origin"
 
+assert_zero_surrogate_freshness_is_uncacheable quoted-positive /surrogate-quoted-positive
+assert_zero_surrogate_freshness_is_uncacheable quoted-semicolon /surrogate-quoted-semicolon
+assert_zero_surrogate_freshness_is_uncacheable quoted-space /surrogate-quoted-space
+assert_zero_surrogate_freshness_is_uncacheable quoted-escape /surrogate-quoted-escape
+assert_zero_surrogate_freshness_is_uncacheable quoted-real-zero /surrogate-quoted-real-zero
+
+for path in surrogate-quoted-real-positive surrogate-quoted-before-positive; do
+  url="${base_url}/${path}"
+  http_request "purge-${path}" "$url" -X PURGE
+  assert_http_status "purge-${path}" 200 "${path} PURGE"
+  http_request "${path}-1" "$url"
+  assert_cache_state "${path}-1" MISS "${path} first request"
+  first_id="$(assert_origin_request_id_present "${path}-1" "${path} first request")"
+  http_request "${path}-2" "$url"
+  assert_cache_state "${path}-2" HIT "${path} second request"
+  assert_same_origin_request_id "${path}-2" "$first_id" "${path} second request"
+done
+
 # Control: a genuine Surrogate-Control freshness grant (max-age) overrides
 # Cache-Control for the shared cache, so this response IS cacheable.
 url_grant="${base_url}/surrogate-fresh"
